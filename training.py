@@ -13,8 +13,12 @@ from utils2.loss import SegmentationLosses
 from utils2.lr_scheduler import LR_Scheduler
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import train_loader 
-from config import training_config
+from config import training_config, format_config
 
+def apply_spectral_norm(module):
+    """Recursively applies spectral normalization to Conv2d and Linear layers."""
+    if isinstance(module, (nn.Conv2d, nn.Linear)):
+        nn.utils.spectral_norm(module)
 
 def to_one_hot(tensor, num_classes):
     """
@@ -64,6 +68,10 @@ def train_joint():
     disc_in_channels = 3 + training_config.num_classes
     
     discriminator = Discriminator(in_channels=disc_in_channels, disc_config=disc_config).to(device)
+
+    # IMPLEMENTATION: Apply Spectral Normalization to SAD weights
+    # This bounds the Lipschitz constant to stabilize training
+    discriminator.apply(apply_spectral_norm)
     
     # C. Feature Extractor
     feature_extractor = RADIOFeatureExtractor().to(device)
@@ -118,7 +126,8 @@ def train_joint():
             masks_gt = masks.to(device)   # S_gt (Indices)
             
             # Create ULR Input
-            lr_img = F.interpolate(real_img, size=(96, 96), mode='bicubic', align_corners=False)
+            lr_img = F.interpolate(real_img, size=(format_config.ultra_low_resolution, format_config.ultra_low_resolution), mode='bicubic', align_corners=False)
+            lr_img = F.interpolate(lr_img, size=(format_config.low_resolution, format_config.low_resolution), mode='bicubic', align_corners=False)
 
             # ===================================================================================
             #  STEP 1: GENERATE & SEGMENT (Forward Pass)
