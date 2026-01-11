@@ -51,3 +51,42 @@ class SegmentationDataset(Dataset):
             mask = self.mask_transform(mask)
 
         return image, mask
+
+
+class SRPretrainDataset(Dataset):
+    def __init__(self, hr_image_dir, hr_transform, degradation_transform):
+        """
+        Args:
+            hr_image_dir (str): Path to folder containing High-Res images.
+            hr_transform (callable): REQUIRED. Transforms for HR image (Crop + ToTensor).
+            degradation_transform (callable): REQUIRED. Pipeline to create LR from HR.
+        """
+        self.hr_image_dir = hr_image_dir
+        self.hr_transform = hr_transform
+        self.degradation_transform = degradation_transform
+        
+        self.images = []
+        valid_extensions = ('.png', '.jpg', '.jpeg')
+        
+        # Load file list
+        for f in sorted(os.listdir(hr_image_dir)):
+            if f.lower().endswith(valid_extensions):
+                self.images.append(f)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img_name = self.images[idx]
+        img_path = os.path.join(self.hr_image_dir, img_name)
+        
+        # 1. Load HR Image
+        hr_image = Image.open(img_path).convert("RGB")
+
+        # 2. Apply HR Transforms (Must include ToTensor)
+        hr_tensor = self.hr_transform(hr_image)
+
+        # 3. Apply Degradation (HR Tensor -> LR Tensor)
+        lr_tensor = self.degradation_transform(hr_tensor)
+
+        return lr_tensor, hr_tensor
