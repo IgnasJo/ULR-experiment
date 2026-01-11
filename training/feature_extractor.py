@@ -1,6 +1,7 @@
 # --- DEFINE FEATURE EXTRACTOR (AM-RADIO) ---
 import torch
 import torch.nn as nn
+from torchvision.models import vgg19
 
 class RADIOFeatureExtractor(nn.Module):
     def __init__(self):
@@ -22,3 +23,21 @@ class RADIOFeatureExtractor(nn.Module):
              # Output is (summary, features)
             _, features = self.model(x) 
             return features
+        
+
+class VGG19FeatureExtractor(nn.Module):
+    def __init__(self):
+        super(VGG19FeatureExtractor, self).__init__()
+        # Use a pre-trained VGG19 network 
+        vgg = vgg19(pretrained=True).features
+        
+        # In ESRGAN, features are taken BEFORE activation [cite: 113]
+        # Specifically, layers like VGG19-54 (before 5th pooling) are used 
+        self.layers = nn.Sequential(*list(vgg.children())[:35]).eval()
+        
+        for param in self.layers.parameters():
+            param.requires_grad = False
+
+    def forward(self, input):
+        vgg_features = self.layers(input)
+        return vgg_features
