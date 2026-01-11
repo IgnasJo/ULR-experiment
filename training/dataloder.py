@@ -3,12 +3,11 @@ import numpy as np
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from PIL import Image
-from config import format_config, training_config
+from config import format_config, training_config, pretraining_config
 
-from training.dataset import SegmentationDataset
+from training.dataset import SegmentationDataset, SRPretrainDataset
 
-evaluate_transform = transforms.Compose([
-    transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
+downsample_transform = transforms.Compose([
     transforms.Resize(
         (format_config.ultra_low_resolution,format_config.ultra_low_resolution),
         interpolation=transforms.InterpolationMode.BICUBIC
@@ -17,7 +16,17 @@ evaluate_transform = transforms.Compose([
         (format_config.low_resolution, format_config.low_resolution),
         interpolation=transforms.InterpolationMode.BICUBIC
     ),
+])
+
+evaluate_transform = transforms.Compose([
+    transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
+    downsample_transform,
     transforms.ToTensor()
+])
+
+degradation_transform = transforms.Compose([
+    transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
+    downsample_transform
 ])
 
 # Define transformations
@@ -56,4 +65,20 @@ train_loader = DataLoader(
     num_workers=1,        # Number of CPU subprocesses to load data in parallel
     pin_memory=False,      # Speeds up transfer to GPU (set True if using CUDA)
     drop_last=True        # Drop the last incomplete batch (optional, helps with batchnorm)
+)
+
+# 3. Initialize Dataset
+pretrain_dataset = SRPretrainDataset(
+    hr_image_dir=pretraining_config.hr_image_dir,
+    hr_transform=train_transform,
+    degradation_transform=degradation_transform
+)
+
+# 4. DataLoader
+pretrain_loader = DataLoader(
+    pretrain_dataset, 
+    batch_size=pretraining_config.batch_size, 
+    shuffle=True, 
+    num_workers=4,
+    pin_memory=True
 )
