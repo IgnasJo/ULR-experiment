@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 
 evaluation_config = SimpleNamespace(
-  test_dir = r'custom\customULR\custom_rgb',
-  test_dir_gt = r'custom\customULR\custom_label',
-  checkpoint_path = r'checkpoints\best\joint_checkpoint_best.pth',
-  evaluation_dir = 'evaluation_output',
-  evaluation_checkpoint_path = r'checkpoints\evaluation_checkpoint'
+  test_dir = r'datasets\custom_ULR\custom_rgb',
+  test_dir_gt = r'datasets\custom_ULR\custom_label',
+  checkpoint_path = r'checkpoints\joint_checkpoint_best.pth',
+  evaluation_dir = 'evaluation_output_32res',
+  evaluation_checkpoint_path = r'checkpoints\evaluation_checkpoint32res.pkl'
 )
 
 format_config = SimpleNamespace(
@@ -34,6 +34,7 @@ training_config = SimpleNamespace(
   lambda_1 = 0.5,  # Weight for L2 Pixel Loss
   lambda_2 = 0.01, # Weight for Feature Loss
   lambda_3 = 0.01, # Weight for Adversarial Loss
+  lambda_abl = 0.02, # start small (ABL is strong)
   image_dir = r'datasets\custom_demo\custom_rgb',
   mask_dir = r'datasets\custom_demo\custom_label'
 )
@@ -52,6 +53,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Try to override config with local_config.py
 try:
-    from local_config import *
+    from local_config import * # type: ignore
 except ImportError:
     pass

@@ -4,7 +4,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 import numpy as np
-import config
+from config import format_config
 from esrgan import Generator
 from modeling.deeplab import DeepLab
 from utils2.metrics import Evaluator
@@ -54,13 +54,13 @@ def visualize_and_save_mask(seg_array, save_path, title=None):
 
 def preprocess_image(image_path):
     img = Image.open(image_path).convert("RGB")
-    if img.width > 384 or img.height > 384:
-        left = (img.width - 384) // 2
-        top  = (img.height - 384) // 2
-        img = img.crop((left, top, left + 384, top + 384))
-    if img.size == (384, 384):
-        img = img.resize((16, 16), Image.BICUBIC)
-        img = img.resize((96, 96), Image.BICUBIC)
+    if img.width > format_config.high_resolution or img.height > format_config.high_resolution:
+        left = (img.width - format_config.high_resolution) // 2
+        top  = (img.height - format_config.high_resolution) // 2
+        img = img.crop((left, top, left + format_config.high_resolution, top + format_config.high_resolution))
+    if img.size == (format_config.high_resolution, format_config.high_resolution):
+        img = img.resize((format_config.ultra_low_resolution, format_config.ultra_low_resolution), Image.BICUBIC)
+        img = img.resize((format_config.low_resolution, format_config.low_resolution), Image.BICUBIC)
     return transforms.ToTensor()(img).unsqueeze(0)
 
 def postprocess_image(tensor):
@@ -76,7 +76,7 @@ def strip_module_state_dict(sd):
     return new_sd
 
 def load_models(checkpoint_path):
-    gen = Generator(config.IMG_CHANNELS).to(device)
+    gen = Generator(format_config.img_channels).to(device)
     seg = DeepLab(num_classes=14, backbone='resnet', output_stride=16,
                   sync_bn=None, freeze_bn=False).to(device)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)

@@ -1,43 +1,55 @@
 from inference import infer_and_save, load_models
 from utils2.metrics import Evaluator
+from utils2.BleedingEdgeEvaluator import BleedingEdgeEvaluator
 import os
 import numpy as np
 import pickle
 from PIL import Image
 from pathlib import Path
-from config import evaluation_config
+from config import evaluation_config, format_config
 
 def preprocess_gt(img_path):
     img = Image.open(img_path).convert('L')
-    if img.width > 384 or img.height > 384:
-      left = (img.width -  384) // 2
-      top  = (img.height - 384) // 2
-      img = img.crop((left, top, left + 384, top + 384))
+    if img.width > format_config.high_resolution or img.height > format_config.high_resolution:
+        left = (img.width -  format_config.high_resolution) // 2
+        top  = (img.height - format_config.high_resolution) // 2
+        img = img.crop((left, top, left + format_config.high_resolution, top + format_config.high_resolution))
     return np.array(img).astype(np.int64)
 
 def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_path, gt_folder):
     # 1. Setup Output and Checkpoint Paths
     os.makedirs(output_folder, exist_ok=True)
-    resume_file = f"{evaluation_checkpoint_path}.pkl"
     
     # 2. Initialize or Resume State
     processed_files = set()
     
-    if os.path.exists(resume_file):
-        print(f"Found checkpoint! Resuming from {resume_file}...")
+    # Initialize Defaults
+    evaluator = Evaluator(num_class=14)
+    edge_evaluator = BleedingEdgeEvaluator()
+
+    if os.path.exists(evaluation_checkpoint_path):
+        print(f"Found checkpoint! Resuming from {evaluation_checkpoint_path}...")
         try:
-            with open(resume_file, 'rb') as f:
+            with open(evaluation_checkpoint_path, 'rb') as f:
                 checkpoint_data = pickle.load(f)
                 evaluator = checkpoint_data['evaluator']
                 processed_files = checkpoint_data['processed_files']
+                
+                # Try to load new evaluator, handle compatibility with old checkpoints
+                if 'edge_evaluator' in checkpoint_data:
+                    edge_evaluator = checkpoint_data['edge_evaluator']
+                else:
+                    print("   [INFO] Checkpoint missing 'edge_evaluator'. Starting fresh for edge metrics.")
+
             print(f"   > Resuming with {len(processed_files)} images already processed.")
         except Exception as e:
             print(f"   [ERROR] Could not load checkpoint: {e}")
             print("   > Starting fresh instead.")
+            # Reset if load fails
             evaluator = Evaluator(num_class=14)
+            edge_evaluator = BleedingEdgeEvaluator()
     else:
         print("Starting fresh evaluation...")
-        evaluator = Evaluator(num_class=14)
 
     # 3. Load Models (Always load fresh)
     print(f"   > Loading models from {checkpoint_path}...")
@@ -65,7 +77,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         img_path = os.path.join(test_folder, fname)
 
         # Run Inference
-        # Assuming infer_and_save is defined in your environment
         infer_and_save(img_path, gen_model, seg_model, output_folder)
 
         # Evaluation Logic (Only if GT is provided)
@@ -77,7 +88,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
             print(f"\n[{i+1}/{len(file_list)}] Processing: {fname}")
 
             # Process Data
-            # Assuming preprocess_gt is defined in your environment
             gt = preprocess_gt(actual_gt_path)
 
             # Find Prediction (Handling extension mismatch)
@@ -94,11 +104,11 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
 
             # Update Running Average (Main Evaluator)
             evaluator.add_batch(gt, seg_pred)
+            
+            # Update Edge Metrics (NEW)
+            edge_evaluator.add_batch(gt, seg_pred)
 
-            # Single Image Metrics for logging
-            single_eval = Evaluator(num_class=14)
-            single_eval.add_batch(gt, seg_pred)
-            print(f"  > Current Img : mIoU: {single_eval.Mean_Intersection_over_Union():.4f} | PA: {single_eval.Pixel_Accuracy():.4f}")
+            # Print Running Average
             print(f"  > Running Avg : mIoU: {evaluator.Mean_Intersection_over_Union():.4f} | PA: {evaluator.Pixel_Accuracy():.4f}")
         else:
             print(f"Warning: No ground truth found for {base_name}")
@@ -106,14 +116,13 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         # 5. Save Checkpoint (After every file)
         processed_files.add(fname)
         
-        # We only need to pickle if we have an evaluator (meaning we have GT)
-        # If no GT, we just track processed files to avoid re-inference
         checkpoint_data = {
             'evaluator': evaluator,
+            'edge_evaluator': edge_evaluator, # NEW: Save this state too
             'processed_files': processed_files
         }
         
-        with open(resume_file, 'wb') as f:
+        with open(evaluation_checkpoint_path, 'wb') as f:
             pickle.dump(checkpoint_data, f)
 
     # 6. Final Metrics
@@ -126,10 +135,16 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         print(f"PA Class:  {evaluator.Pixel_Accuracy_Class():.4f}")
         print(f"FWIoU:     {evaluator.Frequency_Weighted_Intersection_over_Union():.4f}")
         
-        # Optional: Save final text report to Drive as well
+        # Save final text report
         with open(os.path.join(output_folder, "final_results.txt"), "w") as f:
             f.write(f"mIoU: {evaluator.Mean_Intersection_over_Union():.4f}\n")
             f.write(f"PA:   {evaluator.Pixel_Accuracy():.4f}\n")
+            
+        # --- NEW: Generate and Save Plots ---
+        print("\nGeneratng Boundary Analysis Plots...")
+        edge_evaluator.plot_bleeding_edge(save_path=os.path.join(output_folder, "bleeding_edge_error.png"))
+        edge_evaluator.plot_bf_curve(save_path=os.path.join(output_folder, "bf_score_curve.png"))
+        print("Done.")
 
 evaluate(
   evaluation_config.test_dir,

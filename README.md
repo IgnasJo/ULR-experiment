@@ -7,6 +7,10 @@ conda activte ULR2SS
 pip install -r requirements.txt
 ```
 
+### Datasets
+- Found in directory "datasets"
+- Source of SunRGBD dataset: ["Training on RGB data for 13 classes"](https://github.com/ankurhanda/sunrgbd-meta-data?tab=readme-ov-file#training-on-rgb-data-for-13-classes)
+
 ## Weight
 For convenience, our pre-trained ULR2SS model can be downloaded directly here:
 [ULR2SS_Weight](https://drive.google.com/file/d/1QhA2XHYmiajAhTJt9WqJocHGk6vEq3Tj/view)

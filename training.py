@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import numpy as np
 from training.feature_extractor import RADIOFeatureExtractor
+from abl.abl import ABL   # wherever you placed it
 
 from modeling.deeplab import DeepLab
 from utils2.loss import SegmentationLosses
@@ -52,6 +53,7 @@ def feature_loss_calc(f_real, f_fake):
     
     return l1 + l_cos
 
+
 def train_joint():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Starting Joint Training on {device}...")
@@ -93,6 +95,16 @@ def train_joint():
 
     # 3. Loss Functions
     criterion_l2 = nn.MSELoss()        # Eq (2)
+
+
+    criterion_abl = ABL(
+        isdetach=True,
+        max_N_ratio=1/100,
+        ignore_label=255,
+        label_smoothing=0.0,     # IMPORTANT: disable smoothing for stability
+        max_clip_dist=20.0
+    ).to(device)
+
     criterion_gan = nn.BCEWithLogitsLoss() # Eq (7, 8)
     criterion_ce = SegmentationLosses(weight=None, cuda=torch.cuda.is_available()).build_loss(mode='ce') # Eq (3)
 
@@ -205,6 +217,13 @@ def train_joint():
             # B. Calculate Segmentation Loss (L_ce) - Eq (3)
             loss_ce = criterion_ce(seg_logits, masks_gt)
 
+            loss_abl = criterion_abl(seg_logits, masks_gt)
+
+            # ABL may return None if no boundaries are detected
+            if loss_abl is None:
+                loss_abl = torch.tensor(0.0, device=device)
+
+
             # C. Total Loss - Eq (1)
             # L_tot = (1 - alpha) * (lam1*L2 + lam2*L_fea + lam3*L_adv) + alpha * L_ce
             
@@ -212,7 +231,7 @@ def train_joint():
                        (training_config.lambda_2 * loss_fea) + \
                        (training_config.lambda_3 * loss_adv)
             
-            total_loss = ((1 - training_config.alpha) * gen_part) + (training_config.alpha * loss_ce)
+            total_loss = ((1 - training_config.alpha) * gen_part) + (training_config.alpha * loss_ce) + (training_config.lambda_abl * loss_abl)
             
             total_loss.backward()
             
@@ -221,7 +240,7 @@ def train_joint():
 
             # Display
             current_lr = opt_seg.param_groups[0]['lr']
-            tbar.set_description(f"Ep {epoch+1} | L_D: {loss_d.item():.3f} | L_2: {loss_2.item():.3f} | L_CE: {loss_ce.item():.3f} | L_Adv: {loss_adv.item():.3f}")
+            tbar.set_description(f"Ep {epoch+1} | L_D: {loss_d.item():.3f} | L_2: {loss_2.item():.3f} | L_CE: {loss_ce.item():.3f} | L_Adv: {loss_adv.item():.3f} | L_abl: {loss_abl.item():.3f}")
 
         # Checkpointing
         if (epoch + 1) % 5 == 0:
