@@ -15,7 +15,7 @@ from modeling.deeplab import DeepLab
 from utils2.metrics import Evaluator
 from utils2.BleedingEdgeEvaluator import BleedingEdgeEvaluator
 from training.dataloder import create_eval_loader
-from config import evaluation_config, format_config
+from config import evaluation_config, format_config, get_checkpoint_path
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -178,7 +178,7 @@ if __name__ == "__main__":
     evaluate(
         evaluation_config.test_dir,
         evaluation_config.evaluation_dir,
-        evaluation_config.checkpoint_path,
-        evaluation_config.evaluation_checkpoint_path,
+        get_checkpoint_path(evaluation_config.checkpoint_path),
+        get_checkpoint_path("evaluation_checkpoint.pkl"),
         evaluation_config.test_dir_gt,
     )

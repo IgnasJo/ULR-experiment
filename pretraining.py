@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from config import pretraining_config
+from config import pretraining_config, get_checkpoint_path
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import pretrain_loader
 from training.feature_extractor import VGG19FeatureExtractor  # standard VGG perceptual
@@ -143,13 +143,16 @@ def pretrain_sr(save_path="pretrained_generator.pth"):
         # Checkpoint
         # =========================
         if (epoch + 1) % 10 == 0:
-            torch.save(generator.state_dict(), f"sr_generator_pretrain_ep{epoch+1}.pth")
+            ckpt_path = get_checkpoint_path(f"sr_generator_pretrain_ep{epoch+1}.pth")
+            torch.save(generator.state_dict(), ckpt_path)
+            print(f"[SR PRETRAIN] Checkpoint saved to: {ckpt_path}")
 
     # Save final pretrained weights
-    torch.save(generator.state_dict(), save_path)
-    print(f"[SR PRETRAIN] Finished successfully. Saved to: {save_path}")
+    final_path = get_checkpoint_path(save_path)
+    torch.save(generator.state_dict(), final_path)
+    print(f"[SR PRETRAIN] Finished successfully. Saved to: {final_path}")
     
-    return save_path
+    return final_path
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import numpy as np
 import pickle
 from PIL import Image
 from pathlib import Path
-from config import evaluation_config, format_config
+from config import evaluation_config, format_config, get_checkpoint_path
 
 def preprocess_gt(img_path):
     img = Image.open(img_path).convert('L')
@@ -149,8 +149,8 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
 if __name__ == "__main__":
     evaluate(
         evaluation_config.test_dir,
-        evaluation_config.evaluation_dir,
-        evaluation_config.checkpoint_path,
-        evaluation_config.evaluation_checkpoint_path,
+        "batch_inference_output",
+        get_checkpoint_path(evaluation_config.checkpoint_path),
+        get_checkpoint_path("batch_inference_checkpoint.pkl"),
         evaluation_config.test_dir_gt,
     )

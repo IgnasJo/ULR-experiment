@@ -30,7 +30,7 @@ train_joint = training_module.train_joint
 from pretraining import pretrain_sr
 from evaluation import evaluate
 from batch_inference import evaluate as batch_inference_evaluate
-from config import evaluation_config
+from config import evaluation_config, get_checkpoint_path
 
 
 def run_evaluation(checkpoint_path=None, output_dir=None):
@@ -45,8 +45,9 @@ def run_evaluation(checkpoint_path=None, output_dir=None):
     print("EVALUATION")
     print("="*60)
     
-    ckpt = checkpoint_path or evaluation_config.checkpoint_path
+    ckpt = checkpoint_path or get_checkpoint_path(evaluation_config.checkpoint_path)
     out_dir = output_dir or evaluation_config.evaluation_dir
+    eval_ckpt = get_checkpoint_path("evaluation_checkpoint.pkl")
     
     print(f"Checkpoint: {ckpt}")
     print(f"Output dir: {out_dir}")
@@ -55,7 +56,7 @@ def run_evaluation(checkpoint_path=None, output_dir=None):
         evaluation_config.test_dir,
         out_dir,
         ckpt,
-        evaluation_config.evaluation_checkpoint_path,
+        eval_ckpt,
         evaluation_config.test_dir_gt,
     )
     
@@ -78,11 +79,11 @@ def run_batch_inference(checkpoint_path=None, test_dir=None, gt_dir=None, output
     print("BATCH INFERENCE")
     print("="*60)
     
-    ckpt = checkpoint_path or evaluation_config.checkpoint_path
+    ckpt = checkpoint_path or get_checkpoint_path(evaluation_config.checkpoint_path)
     test = test_dir or evaluation_config.test_dir
     gt = gt_dir or evaluation_config.test_dir_gt
     out_dir = output_dir or "batch_inference_output"
-    eval_ckpt = os.path.join("checkpoints", "batch_inference_checkpoint.pkl")
+    eval_ckpt = get_checkpoint_path("batch_inference_checkpoint.pkl")
     
     print(f"Checkpoint: {ckpt}")
     print(f"Test dir:   {test}")
@@ -128,7 +129,7 @@ def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_path=
             return
     
     # Phase 2: Joint Training
-    joint_checkpoint = "joint_checkpoint_final.pth"
+    joint_checkpoint = get_checkpoint_path("joint_checkpoint_final.pth")
     if not pretrain_only:
         print("\n[Pipeline] Starting Phase 2: Joint Training...")
         train_joint(pretrained_generator_path=pretrained_path)

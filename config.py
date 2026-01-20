@@ -1,15 +1,45 @@
 """Global configuration values, various training, evaluation parameters, magic values. Can override with local_config.py"""
 
 import torch
+import os
+from datetime import datetime
 from types import SimpleNamespace
 
 
+# ============================================================================
+# Checkpoint Directory Management
+# ============================================================================
+def get_checkpoint_dir():
+    """
+    Get the checkpoint directory for today's date.
+    Creates folder structure: checkpoints/MM-DD/
+    """
+    date_str = datetime.now().strftime("%m-%d")
+    checkpoint_dir = os.path.join("checkpoints", date_str)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    return checkpoint_dir
+
+def get_checkpoint_path(filename):
+    """
+    Get full path for a checkpoint file in today's dated folder.
+    
+    Args:
+        filename: Name of the checkpoint file (e.g., 'joint_checkpoint_final.pth')
+        
+    Returns:
+        Full path like 'checkpoints/01-20/joint_checkpoint_final.pth'
+    """
+    return os.path.join(get_checkpoint_dir(), filename)
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
 evaluation_config = SimpleNamespace(
   test_dir = r'datasets\custom_demo\rgb',
   test_dir_gt = r'datasets\custom_demo\label',
-  checkpoint_path = r'joint_checkpoint_final.pth',
+  checkpoint_path = r'joint_checkpoint_final.pth',  # Will be resolved via get_checkpoint_path()
   evaluation_dir = 'evaluation_output',
-  evaluation_checkpoint_path = r'checkpoints\evaluation_checkpoint.pkl'
 )
 
 format_config = SimpleNamespace(

@@ -14,7 +14,7 @@ from utils2.loss import SegmentationLosses
 from utils2.lr_scheduler import LR_Scheduler
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import train_loader 
-from config import training_config, format_config
+from config import training_config, format_config, get_checkpoint_path
 
 def apply_spectral_norm(module):
     """Recursively applies spectral normalization to Conv2d and Linear layers."""
@@ -264,7 +264,9 @@ def train_joint(pretrained_generator_path=None):
                 'seg_state_dict': segmentor.state_dict(),
                 'epoch': epoch + 1
             }
-            torch.save(checkpoint, f"joint_checkpoint_ep{epoch+1}.pth")
+            ckpt_path = get_checkpoint_path(f"joint_checkpoint_ep{epoch+1}.pth")
+            torch.save(checkpoint, ckpt_path)
+            print(f"[Joint] Checkpoint saved to: {ckpt_path}")
     
     # Save final checkpoint
     final_checkpoint = {
@@ -272,8 +274,9 @@ def train_joint(pretrained_generator_path=None):
         'seg_state_dict': segmentor.state_dict(),
         'epoch': training_config.num_epochs
     }
-    torch.save(final_checkpoint, "joint_checkpoint_final.pth")
-    print(f"[Joint] Training complete. Final checkpoint saved to: joint_checkpoint_final.pth")
+    final_path = get_checkpoint_path("joint_checkpoint_final.pth")
+    torch.save(final_checkpoint, final_path)
+    print(f"[Joint] Training complete. Final checkpoint saved to: {final_path}")
 
 if __name__ == "__main__":
     train_joint()
