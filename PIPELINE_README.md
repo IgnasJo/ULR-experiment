@@ -15,9 +15,9 @@ Complete SR + Semantic Segmentation joint training pipeline with one-line comman
 | `python full_pipeline.py --eval-only` | Evaluate using default checkpoint from config |
 | `python full_pipeline.py --eval-only --checkpoint path.pth` | Evaluate specific checkpoint |
 | `python full_pipeline.py --eval-only --checkpoint path.pth --eval-output dir/` | Evaluate with custom output directory |
-| `python full_pipeline.py --batch-inference` | Run batch inference on separate test folder (from config) |
+| `python full_pipeline.py --batch-inference` | Run batch inference (save images only, no metrics) |
 | `python full_pipeline.py --batch-inference --checkpoint path.pth` | Batch inference with specific checkpoint |
-| `python full_pipeline.py --batch-inference --test-dir path --gt-dir path` | Batch inference with custom folders |
+| `python full_pipeline.py --batch-inference --test-dir path` | Batch inference with custom test folder |
 
 ## Checkpoint Structure
 
@@ -25,7 +25,6 @@ All checkpoints auto-save to `checkpoints/MM-DD/` (dated folder, MM=month, DD=da
 - **Pretraining**: `sr_generator_pretrain_ep{N}.pth`, `pretrained_generator.pth`
 - **Joint Training**: `joint_checkpoint_ep{N}.pth`, `joint_checkpoint_final.pth`
 - **Evaluation**: `evaluation_checkpoint.pkl`
-- **Batch Inference**: `batch_inference_checkpoint.pkl`
 
 ## Configuration
 
@@ -39,8 +38,8 @@ Edit `config.py` for:
 - **Phase 1**: Pretraining (VGG perceptual + GAN loss)
 - **Phase 2**: Joint training (Generator + Segmentor with all losses)
 - **Phase 3**: Evaluation (mIoU, PA, boundary metrics, visualizations)
-- **Batch Inference**: Standalone inference on separate test folder
-- **Resume**: Automatic checkpointing on interrupt
+- **Batch Inference**: Standalone inference (saves images only, no metrics)
+- **Resume**: Automatic checkpointing on interrupt (training and evaluation)
 - **Dated Folders**: Checkpoints organized by date (MM-DD format)
 
 ## Output
