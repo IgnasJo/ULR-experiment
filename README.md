@@ -15,6 +15,14 @@ pip install -r requirements.txt
 For convenience, our pre-trained ULR2SS model can be downloaded directly here:
 [ULR2SS_Weight](https://drive.google.com/file/d/1QhA2XHYmiajAhTJt9WqJocHGk6vEq3Tj/view)
 
+## Train pipeline usage
+```bash
+python full_pipeline.py
+python full_pipeline.py --skip-pretrain
+python full_pipeline.py --pretrain-only
+python full_pipeline.py --joint-only weights.pth
+```
+
 ## Demo Test
 ```bash
 python inference.py \

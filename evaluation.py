@@ -146,10 +146,11 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         edge_evaluator.plot_bf_curve(save_path=os.path.join(output_folder, "bf_score_curve.png"))
         print("Done.")
 
-evaluate(
-  evaluation_config.test_dir,
-  evaluation_config.evaluation_dir,
-  evaluation_config.checkpoint_path,
-  evaluation_config.evaluation_checkpoint_path,
-  evaluation_config.test_dir_gt,
-)
+if __name__ == "__main__":
+    evaluate(
+        evaluation_config.test_dir,
+        evaluation_config.evaluation_dir,
+        evaluation_config.checkpoint_path,
+        evaluation_config.evaluation_checkpoint_path,
+        evaluation_config.test_dir_gt,
+    )

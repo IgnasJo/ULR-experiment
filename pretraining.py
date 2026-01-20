@@ -16,9 +16,19 @@ def apply_spectral_norm(module):
 
 
 
-def pretrain_sr():
+def pretrain_sr(save_path="pretrained_generator.pth"):
+    """
+    Pretrain the SR Generator.
+    
+    Args:
+        save_path: Path to save the final pretrained weights
+        
+    Returns:
+        Path to saved pretrained weights
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[SR PRETRAIN] Device: {device}")
+    print(f"[SR PRETRAIN] Will save to: {save_path}")
 
     # =========================
     # Models
@@ -135,7 +145,11 @@ def pretrain_sr():
         if (epoch + 1) % 10 == 0:
             torch.save(generator.state_dict(), f"sr_generator_pretrain_ep{epoch+1}.pth")
 
-    print("[SR PRETRAIN] Finished successfully")
+    # Save final pretrained weights
+    torch.save(generator.state_dict(), save_path)
+    print(f"[SR PRETRAIN] Finished successfully. Saved to: {save_path}")
+    
+    return save_path
 
 
 if __name__ == "__main__":

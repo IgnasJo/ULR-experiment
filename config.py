@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 
 evaluation_config = SimpleNamespace(
-  test_dir = r'datasets\custom_ULR\custom_rgb',
-  test_dir_gt = r'datasets\custom_ULR\custom_label',
-  checkpoint_path = r'checkpoints\joint_checkpoint_best.pth',
-  evaluation_dir = 'evaluation_output_32res',
-  evaluation_checkpoint_path = r'checkpoints\evaluation_checkpoint32res.pkl'
+  test_dir = r'datasets\custom_demo\rgb',
+  test_dir_gt = r'datasets\custom_demo\label',
+  checkpoint_path = r'joint_checkpoint_final.pth',
+  evaluation_dir = 'evaluation_output',
+  evaluation_checkpoint_path = r'checkpoints\evaluation_checkpoint.pkl'
 )
 
 format_config = SimpleNamespace(
@@ -22,7 +22,7 @@ format_config.high_resolution = format_config.low_resolution * 4
 
 training_config = SimpleNamespace(
   num_classes = 14, # Count with default "background" class
-  num_epochs = 100,
+  num_epochs = 2,
   batch_size = 1,
   generator_lr = 1e-4,
   discriminator_lr = 1e-4,
@@ -35,16 +35,16 @@ training_config = SimpleNamespace(
   lambda_2 = 0.01, # Weight for Feature Loss
   lambda_3 = 0.01, # Weight for Adversarial Loss
   lambda_abl = 0.02, # start small (ABL is strong)
-  image_dir = r'datasets\custom_demo\custom_rgb',
-  mask_dir = r'datasets\custom_demo\custom_label'
+  image_dir = r'datasets\custom_demo\rgb',
+  mask_dir = r'datasets\custom_demo\label'
 )
 
 pretraining_config = SimpleNamespace(
-  num_epochs = 50,
+  num_epochs = 2,
   vgg_weight = 5e-3,
   gan_weight = 1e-2,
   batch_size = 16,
-  hr_image_dir=r'datasets\custom_demo\custom_rgb',
+  hr_image_dir=r'datasets\custom_demo\rgb',
   generator_lr = training_config.generator_lr,
   discriminator_lr = training_config.discriminator_lr,
 )

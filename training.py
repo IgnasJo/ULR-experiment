@@ -54,7 +54,13 @@ def feature_loss_calc(f_real, f_fake):
     return l1 + l_cos
 
 
-def train_joint():
+def train_joint(pretrained_generator_path=None):
+    """
+    Joint training of Generator and Segmentor.
+    
+    Args:
+        pretrained_generator_path: Path to pretrained generator weights (optional)
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Starting Joint Training on {device}...")
 
@@ -62,6 +68,15 @@ def train_joint():
     
     # A. Generator (Super Resolution)
     generator = Generator().to(device)
+    
+    # Load pretrained weights if provided
+    if pretrained_generator_path and os.path.exists(pretrained_generator_path):
+        print(f"[Joint] Loading pretrained generator from: {pretrained_generator_path}")
+        generator.load_state_dict(torch.load(pretrained_generator_path, map_location=device))
+        print("[Joint] Pretrained weights loaded successfully!")
+    elif pretrained_generator_path:
+        print(f"[Warning] Pretrained weights not found at: {pretrained_generator_path}")
+        print("[Warning] Training generator from scratch...")
 
     # B. Discriminator 
     # as per Eq (10): z = concat(I, S)
@@ -242,10 +257,23 @@ def train_joint():
             current_lr = opt_seg.param_groups[0]['lr']
             tbar.set_description(f"Ep {epoch+1} | L_D: {loss_d.item():.3f} | L_2: {loss_2.item():.3f} | L_CE: {loss_ce.item():.3f} | L_Adv: {loss_adv.item():.3f} | L_abl: {loss_abl.item():.3f}")
 
-        # Checkpointing
+        # Checkpointing - save as single file compatible with inference.py load_models()
         if (epoch + 1) % 5 == 0:
-            torch.save(generator.state_dict(), f"generator_ep{epoch+1}.pth")
-            torch.save(segmentor.state_dict(), f"segmentor_ep{epoch+1}.pth")
+            checkpoint = {
+                'gen_state_dict': generator.state_dict(),
+                'seg_state_dict': segmentor.state_dict(),
+                'epoch': epoch + 1
+            }
+            torch.save(checkpoint, f"joint_checkpoint_ep{epoch+1}.pth")
+    
+    # Save final checkpoint
+    final_checkpoint = {
+        'gen_state_dict': generator.state_dict(),
+        'seg_state_dict': segmentor.state_dict(),
+        'epoch': training_config.num_epochs
+    }
+    torch.save(final_checkpoint, "joint_checkpoint_final.pth")
+    print(f"[Joint] Training complete. Final checkpoint saved to: joint_checkpoint_final.pth")
 
 if __name__ == "__main__":
     train_joint()
