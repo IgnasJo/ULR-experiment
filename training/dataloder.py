@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from PIL import Image
 from config import format_config, training_config, pretraining_config
 
-from training.dataset import SegmentationDataset, SRPretrainDataset
+from training.dataset import SegmentationDataset, SRPretrainDataset, EvaluationDataset
 
 downsample_transform = transforms.Compose([
     transforms.Resize(
@@ -82,3 +82,33 @@ pretrain_loader = DataLoader(
     num_workers=4,
     pin_memory=True
 )
+
+
+def create_eval_loader(test_dir, gt_dir, batch_size=1):
+    """
+    Create evaluation DataLoader.
+    
+    Args:
+        test_dir: Path to test images
+        gt_dir: Path to ground truth masks
+        batch_size: Batch size (default 1 for evaluation)
+        
+    Returns:
+        DataLoader for evaluation
+    """
+    eval_dataset = EvaluationDataset(
+        test_dir=test_dir,
+        gt_dir=gt_dir,
+        lr_transform=evaluate_transform,
+        mask_transform=mask_transform
+    )
+    
+    eval_loader = DataLoader(
+        eval_dataset,
+        batch_size=batch_size,
+        shuffle=False,  # Keep order for evaluation
+        num_workers=2,
+        pin_memory=True
+    )
+    
+    return eval_loader

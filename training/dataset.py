@@ -90,3 +90,68 @@ class SRPretrainDataset(Dataset):
         lr_tensor = self.degradation_transform(hr_tensor)
 
         return lr_tensor, hr_tensor
+
+
+class EvaluationDataset(Dataset):
+    """
+    Dataset for evaluation that returns:
+    - LR input tensor (degraded from HR)
+    - GT mask tensor
+    - filename (for saving results)
+    """
+    def __init__(self, test_dir, gt_dir, lr_transform, mask_transform):
+        """
+        Args:
+            test_dir (str): Path to test images (HR images to be degraded)
+            gt_dir (str): Path to ground truth segmentation masks
+            lr_transform (callable): Transform to create LR input from HR image
+            mask_transform (callable): Transform for GT masks
+        """
+        self.test_dir = test_dir
+        self.gt_dir = gt_dir
+        self.lr_transform = lr_transform
+        self.mask_transform = mask_transform
+        
+        self.images = []
+        self.masks = []
+        self.filenames = []
+        valid_extensions = ('.png', '.jpg', '.jpeg')
+        
+        # Build mask lookup
+        mask_map = {}
+        for f in os.listdir(gt_dir):
+            if f.lower().endswith(valid_extensions):
+                stem = os.path.splitext(f)[0]
+                mask_map[stem] = f
+        
+        # Match images with masks
+        for img_name in sorted(os.listdir(test_dir)):
+            if img_name.lower().endswith(valid_extensions):
+                img_stem = os.path.splitext(img_name)[0]
+                
+                if img_stem in mask_map:
+                    self.images.append(img_name)
+                    self.masks.append(mask_map[img_stem])
+                    self.filenames.append(img_name)
+                else:
+                    print(f"Warning: Image '{img_name}' ignored (no matching GT mask)")
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img_name = self.images[idx]
+        mask_name = self.masks[idx]
+        
+        img_path = os.path.join(self.test_dir, img_name)
+        mask_path = os.path.join(self.gt_dir, mask_name)
+        
+        # Load and transform image
+        image = Image.open(img_path).convert("RGB")
+        lr_tensor = self.lr_transform(image)
+        
+        # Load and transform mask
+        mask = Image.open(mask_path).convert("L")
+        mask_tensor = self.mask_transform(mask)
+        
+        return lr_tensor, mask_tensor, img_name

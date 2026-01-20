@@ -1,7 +1,7 @@
 """
 Full Training Pipeline
 ======================
-Integrates pretraining, joint training, and evaluation phases.
+Integrates pretraining, joint training, evaluation, and batch inference phases.
 
 Usage:
     python full_pipeline.py                         # Run full pipeline (pretrain → joint)
@@ -11,6 +11,8 @@ Usage:
     python full_pipeline.py --joint-only path.pth   # Only run joint training with weights
     python full_pipeline.py --eval-only             # Only run evaluation
     python full_pipeline.py --eval-only --checkpoint path.pth  # Evaluate specific checkpoint
+    python full_pipeline.py --batch-inference       # Run batch inference on separate test folder
+    python full_pipeline.py --batch-inference --checkpoint path.pth  # Batch inference with specific checkpoint
 """
 
 import argparse
@@ -27,6 +29,7 @@ train_joint = training_module.train_joint
 # Import pretraining and evaluation normally (no package conflict)
 from pretraining import pretrain_sr
 from evaluation import evaluate
+from batch_inference import evaluate as batch_inference_evaluate
 from config import evaluation_config
 
 
@@ -58,6 +61,44 @@ def run_evaluation(checkpoint_path=None, output_dir=None):
     
     print("\n" + "="*60)
     print("EVALUATION COMPLETED")
+    print("="*60)
+
+
+def run_batch_inference(checkpoint_path=None, test_dir=None, gt_dir=None, output_dir=None):
+    """
+    Run batch inference on a separate test folder (not the train/eval split).
+    
+    Args:
+        checkpoint_path: Path to model checkpoint (uses config default if None)
+        test_dir: Input test images directory (uses config default if None)
+        gt_dir: Ground truth masks directory (uses config default if None)
+        output_dir: Output directory for results (uses config default if None)
+    """
+    print("\n" + "="*60)
+    print("BATCH INFERENCE")
+    print("="*60)
+    
+    ckpt = checkpoint_path or evaluation_config.checkpoint_path
+    test = test_dir or evaluation_config.test_dir
+    gt = gt_dir or evaluation_config.test_dir_gt
+    out_dir = output_dir or "batch_inference_output"
+    eval_ckpt = os.path.join("checkpoints", "batch_inference_checkpoint.pkl")
+    
+    print(f"Checkpoint: {ckpt}")
+    print(f"Test dir:   {test}")
+    print(f"GT dir:     {gt}")
+    print(f"Output dir: {out_dir}")
+    
+    batch_inference_evaluate(
+        test,
+        out_dir,
+        ckpt,
+        eval_ckpt,
+        gt,
+    )
+    
+    print("\n" + "="*60)
+    print("BATCH INFERENCE COMPLETED")
     print("="*60)
 
 
@@ -117,12 +158,22 @@ if __name__ == "__main__":
     parser.add_argument("--joint-only", type=str, default=None, help="Run only joint training with specified weights")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation after training")
     parser.add_argument("--eval-only", action="store_true", help="Run only evaluation (skip training)")
-    parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path for evaluation")
+    parser.add_argument("--batch-inference", action="store_true", help="Run batch inference on separate test folder")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path for evaluation/inference")
     parser.add_argument("--eval-output", type=str, default=None, help="Output directory for evaluation results")
+    parser.add_argument("--test-dir", type=str, default=None, help="Test images directory for batch inference")
+    parser.add_argument("--gt-dir", type=str, default=None, help="Ground truth directory for batch inference")
     
     args = parser.parse_args()
     
-    if args.eval_only:
+    if args.batch_inference:
+        run_batch_inference(
+            checkpoint_path=args.checkpoint,
+            test_dir=args.test_dir,
+            gt_dir=args.gt_dir,
+            output_dir=args.eval_output
+        )
+    elif args.eval_only:
         run_evaluation(checkpoint_path=args.checkpoint, output_dir=args.eval_output)
     elif args.joint_only:
         train_joint(pretrained_generator_path=args.joint_only)
