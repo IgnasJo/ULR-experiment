@@ -4,8 +4,13 @@ import torch.nn.functional as F
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt as distance
-# can find here: https://github.com/CoinCheung/pytorch-loss/blob/af876e43218694dc8599cc4711d9a5c5e043b1b2/label_smooth.py
-from .label_smooth import LabelSmoothSoftmaxCEV1 as LSSCE
+
+# Handle both relative and absolute imports for flexibility
+try:
+    from .label_smooth import LabelSmoothSoftmaxCEV1 as LSSCE
+except ImportError:
+    from label_smooth import LabelSmoothSoftmaxCEV1 as LSSCE
+
 from torchvision import transforms
 from functools import partial
 from operator import itemgetter
@@ -17,7 +22,7 @@ def kl_div(a,b): # q,p
 def one_hot2dist(seg):
     res = np.zeros_like(seg)
     for i in range(len(seg)):
-        posmask = seg[i].astype(np.bool)
+        posmask = seg[i].astype(bool)
         if posmask.any():
             negmask = ~posmask
             res[i] = distance(negmask) * negmask - (distance(posmask) - 1) * posmask
@@ -80,7 +85,7 @@ class ABL(nn.Module):
             else:
                 break
         #dilate
-        dilate_weight = torch.ones((1,1,3,3)).cuda()
+        dilate_weight = torch.ones((1,1,3,3), device=logit.device)
         edge2 = torch.nn.functional.conv2d(kl_combine_bin, dilate_weight, stride=1, padding=1)
         edge2 = edge2.squeeze(1)  # NCHW->NHW
         kl_combine_bin = (edge2 > 0)
@@ -168,6 +173,7 @@ class ABL(nn.Module):
 
     def forward(self, logits, target, dist_maps=None):
         eps = 1e-10
+        device = logits.device
         ph, pw = logits.size(2), logits.size(3)
         h, w = target.size(1), target.size(2)
 
@@ -177,9 +183,9 @@ class ABL(nn.Module):
 
         if dist_maps is None:
             gt_boundary = self.gt2boundary(target, ignore_label=self.ignore_label)
-            dist_maps = self.get_dist_maps(gt_boundary).cuda()
+            dist_maps = self.get_dist_maps(gt_boundary).to(device)
         else:
-            dist_maps = dist_maps.cuda()
+            dist_maps = dist_maps.to(device)
 
         pred_boundary = self.logits2boundary(logits)
         if pred_boundary.sum() < 1: # avoid nan
@@ -205,18 +211,20 @@ if __name__ == '__main__':
 
     seed = 0
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
     random.seed(seed)
     np.random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     n,c,h,w = 1,2,100,100
-    gt = torch.zeros((n,h,w)).cuda()
+    gt = torch.zeros((n,h,w), device=device)
     gt[0,5] = 1
     gt[0,50] = 1
-    logits = torch.randn((n,c,h,w)).cuda()
+    logits = torch.randn((n,c,h,w), device=device)
 
-    abl = ABL()
+    abl = ABL().to(device)
     print(abl(logits, gt))

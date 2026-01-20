@@ -23,7 +23,7 @@ class SegmentationLosses(object):
         criterion = nn.CrossEntropyLoss(weight=self.weight, ignore_index=self.ignore_index,
                                         size_average=self.size_average)
         if self.cuda:
-            criterion = criterion.cuda()
+            criterion = criterion.to(logit.device)
 
         loss = criterion(logit, target.long())
 
@@ -37,7 +37,7 @@ class SegmentationLosses(object):
         criterion = nn.CrossEntropyLoss(weight=self.weight, ignore_index=self.ignore_index,
                                         size_average=self.size_average)
         if self.cuda:
-            criterion = criterion.cuda()
+            criterion = criterion.to(logit.device)
 
         logpt = -criterion(logit, target.long())
         pt = torch.exp(logpt)
@@ -51,9 +51,10 @@ class SegmentationLosses(object):
         return loss
 
 if __name__ == "__main__":
-    loss = SegmentationLosses(cuda=True)
-    a = torch.rand(1, 3, 7, 7).cuda()
-    b = torch.rand(1, 7, 7).cuda()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    loss = SegmentationLosses(cuda=torch.cuda.is_available())
+    a = torch.rand(1, 3, 7, 7, device=device)
+    b = torch.rand(1, 7, 7, device=device)
     print(loss.CrossEntropyLoss(a, b).item())
     print(loss.FocalLoss(a, b, gamma=0, alpha=None).item())
     print(loss.FocalLoss(a, b, gamma=2, alpha=0.5).item())
