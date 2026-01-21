@@ -95,6 +95,13 @@ def pretrain_sr(save_path="pretrained_generator.pth"):
             loss_d.backward()
             opt_d.step()
 
+            # Store discriminator loss for logging before deletion
+            log_d = loss_d.item()
+
+            # Free memory before generator training
+            del pred_real, pred_fake, loss_d_real, loss_d_fake, loss_d, fake_sr
+            torch.cuda.empty_cache()
+
             # =====================================================
             # Train Generator
             # =====================================================
@@ -127,15 +134,25 @@ def pretrain_sr(save_path="pretrained_generator.pth"):
                 + pretraining_config.gan_weight * loss_gan
             )
 
+            # Store values for logging before backward pass
+            log_l1 = loss_l1.item()
+            log_vgg = loss_vgg.item()
+            log_gan = loss_gan.item()
+
             loss_g.backward()
             opt_g.step()
 
+            # Free memory after each batch
+            del fake_sr, fake_features, real_features, pred_fake
+            del loss_l1, loss_vgg, loss_gan, loss_g
+            torch.cuda.empty_cache()
+
             tbar.set_postfix(
                 {
-                    "L_D": f"{loss_d.item():.3f}",
-                    "L_L1": f"{loss_l1.item():.3f}",
-                    "L_VGG": f"{loss_vgg.item():.3f}",
-                    "L_GAN": f"{loss_gan.item():.3f}",
+                    "L_D": f"{log_d:.3f}",
+                    "L_L1": f"{log_l1:.3f}",
+                    "L_VGG": f"{log_vgg:.3f}",
+                    "L_GAN": f"{log_gan:.3f}",
                 }
             )
 

@@ -79,7 +79,7 @@ pretrain_loader = DataLoader(
     pretrain_dataset, 
     batch_size=pretraining_config.batch_size, 
     shuffle=True, 
-    num_workers=4,
+    num_workers=2,  # Reduced from 4 - Colab recommends max 2 workers
     pin_memory=True
 )
 
