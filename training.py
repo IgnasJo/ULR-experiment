@@ -34,7 +34,10 @@ def to_one_hot(tensor, num_classes):
 def feature_loss_calc(f_real, f_fake):
     """
     Calculates L_fea = L1 + L_cos (Eq 4, 5, 6)
+    With numerical stability to prevent NaN
     """
+    eps = 1e-8
+    
     # L1 Component
     l1 = F.l1_loss(f_fake, f_real)
     
@@ -47,9 +50,16 @@ def feature_loss_calc(f_real, f_fake):
     else:
         f_real_flat = f_real
         f_fake_flat = f_fake
-        
-    cos_sim = F.cosine_similarity(f_real_flat, f_fake_flat, dim=1).mean()
+    
+    # Normalize to prevent numerical instability
+    f_real_norm = F.normalize(f_real_flat, p=2, dim=1, eps=eps)
+    f_fake_norm = F.normalize(f_fake_flat, p=2, dim=1, eps=eps)
+    
+    cos_sim = (f_real_norm * f_fake_norm).sum(dim=1).mean()
     l_cos = 1 - cos_sim
+    
+    # Clamp to prevent extreme values
+    l_cos = torch.clamp(l_cos, min=0.0, max=2.0)
     
     return l1 + l_cos
 
@@ -191,8 +201,15 @@ def train_joint(pretrained_generator_path=None):
             loss_d_fake = criterion_gan(pred_d_fake, torch.zeros_like(pred_d_fake))
             
             loss_d = loss_d_real + loss_d_fake
-            loss_d.backward()
-            opt_d.step()
+            
+            # Check for NaN before backward
+            if not (torch.isnan(loss_d) or torch.isinf(loss_d)):
+                loss_d.backward()
+                torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
+                opt_d.step()
+            else:
+                print(f"[Warning] NaN/Inf in discriminator loss, skipping D update")
+                loss_d = torch.tensor(0.0, device=device)  # For logging
 
             # ===================================================================================
             #  STEP 3: TRAIN GENERATOR & SEGMENTOR JOINTLY (Eq 1)
@@ -220,10 +237,11 @@ def train_joint(pretrained_generator_path=None):
             # This does NOT affect the generator's training resolution (which stays 384)
             real_for_radio = F.interpolate(real_img, size=radio_size, mode='bilinear', align_corners=False)
             fake_for_radio = F.interpolate(fake_sr, size=radio_size, mode='bilinear', align_corners=False)
-            with torch.no_grad():
-                real_feat = feature_extractor(real_for_radio)
-            fake_feat = feature_extractor(fake_for_radio)
-            loss_fea = feature_loss_calc(real_feat, fake_feat)
+            # Real features: no gradients needed (target)
+            # Fake features: gradients needed (to train generator)
+            real_feat = feature_extractor(real_for_radio, no_grad=True)
+            fake_feat = feature_extractor(fake_for_radio, no_grad=False)
+            loss_fea = feature_loss_calc(real_feat.detach(), fake_feat)
             
             # 3. Adversarial Loss - Eq (11)
             pred_d_fake_g = discriminator(z_fake_grad)
@@ -248,7 +266,19 @@ def train_joint(pretrained_generator_path=None):
             
             total_loss = ((1 - training_config.alpha) * gen_part) + (training_config.alpha * loss_ce) + (training_config.lambda_abl * loss_abl)
             
+            # Check for NaN before backward pass
+            if torch.isnan(total_loss) or torch.isinf(total_loss):
+                print(f"[Warning] NaN/Inf detected in total_loss, skipping batch")
+                print(f"  L_2: {loss_2.item()}, L_fea: {loss_fea.item()}, L_adv: {loss_adv.item()}, L_ce: {loss_ce.item()}, L_abl: {loss_abl.item()}")
+                opt_g.zero_grad()
+                opt_seg.zero_grad()
+                continue
+            
             total_loss.backward()
+            
+            # Gradient clipping to prevent explosion
+            torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(segmentor.parameters(), max_norm=1.0)
             
             opt_g.step()
             opt_seg.step()

@@ -14,14 +14,21 @@ class RADIOFeatureExtractor(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
-    def forward(self, x):
+    def forward(self, x, no_grad=False):
         # RADIO expects normalized inputs, but usually handles standard ImageNet norm.
         # It returns a tuple, we usually want the patch embeddings or the summary token.
         # For perceptual loss, we use the intermediate features or the final projection.
         # Based on RADIO API, simple forward returns features.
-        with torch.no_grad():
-             # Output is (summary, features)
-            _, features = self.model(x) 
+        # 
+        # no_grad=True for real images (don't need gradients)
+        # no_grad=False for fake images (need gradients to flow back to generator)
+        if no_grad:
+            with torch.no_grad():
+                _, features = self.model(x)
+                return features
+        else:
+            # Allow gradients to flow through for generator training
+            _, features = self.model(x)
             return features
         
 
