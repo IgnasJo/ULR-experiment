@@ -187,26 +187,40 @@ def train_joint(pretrained_generator_path=None):
             # z_fake = concat(I_sr, S_pred_probs)
             z_fake = torch.cat([fake_sr.detach(), seg_probs.detach()], dim=1) # Detach for D training
 
+            # Add instance noise to discriminator inputs (decays over training)
+            # This prevents the discriminator from memorizing and overfitting
+            noise_std = max(0.1 * (1 - epoch / training_config.num_epochs), 0.02)
+            z_real_noisy = z_real + noise_std * torch.randn_like(z_real)
+            z_fake_noisy = z_fake + noise_std * torch.randn_like(z_fake)
+
             # ===================================================================================
             #  STEP 2: TRAIN DISCRIMINATOR (Eq 7)
             # ===================================================================================
             opt_d.zero_grad()
             
-            # Real Branch
-            pred_d_real = discriminator(z_real)
-            loss_d_real = criterion_gan(pred_d_real, torch.ones_like(pred_d_real))
+            # Real Branch - One-sided label smoothing (0.9 instead of 1.0)
+            # This prevents the discriminator from becoming overconfident
+            pred_d_real = discriminator(z_real_noisy)
+            real_labels = torch.ones_like(pred_d_real) * training_config.label_smoothing_real
+            loss_d_real = criterion_gan(pred_d_real, real_labels)
             
-            # Fake Branch
-            pred_d_fake = discriminator(z_fake)
+            # Fake Branch - Keep labels at 0.0 (no smoothing for fake)
+            pred_d_fake = discriminator(z_fake_noisy)
             loss_d_fake = criterion_gan(pred_d_fake, torch.zeros_like(pred_d_fake))
             
             loss_d = loss_d_real + loss_d_fake
             
+            # Only update discriminator if it's not already too strong
+            # Skip D update if it's already winning too hard (L_D < 0.1)
+            should_update_d = loss_d.item() > 0.1
+            
             # Check for NaN before backward
-            if not (torch.isnan(loss_d) or torch.isinf(loss_d)):
+            if not (torch.isnan(loss_d) or torch.isinf(loss_d)) and should_update_d:
                 loss_d.backward()
                 torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
                 opt_d.step()
+            elif not should_update_d:
+                pass  # Skip D update silently when D is too strong
             else:
                 print(f"[Warning] NaN/Inf in discriminator loss, skipping D update")
                 loss_d = torch.tensor(0.0, device=device)  # For logging

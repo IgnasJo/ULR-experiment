@@ -55,7 +55,7 @@ training_config = SimpleNamespace(
   num_epochs = 2,
   batch_size = 1,
   generator_lr = 1e-4,
-  discriminator_lr = 1e-4,
+  discriminator_lr = 1e-5,  # Lowered from 1e-4 to slow down discriminator
   segmentor_lr = 1e-2,
   lr_scheduler = 'poly',
   LEARNING_RATE = 1e-4,
@@ -63,8 +63,11 @@ training_config = SimpleNamespace(
   alpha = 0.3,     # Balancing parameter between Generative and Segmentation loss
   lambda_1 = 0.5,  # Weight for L2 Pixel Loss
   lambda_2 = 0.01, # Weight for Feature Loss
-  lambda_3 = 0.01, # Weight for Adversarial Loss
+  lambda_3 = 0.005, # Weight for Adversarial Loss (lowered to reduce L_Adv explosion)
   lambda_abl = 0.02, # start small (ABL is strong)
+  # GAN Stability
+  label_smoothing_real = 0.9,  # One-sided label smoothing for discriminator
+  d_update_freq = 1,  # Update discriminator every N iterations (increase if D too strong)
   image_dir = r'datasets\custom_demo\rgb',
   mask_dir = r'datasets\custom_demo\label'
 )
