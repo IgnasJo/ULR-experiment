@@ -81,8 +81,14 @@ pretraining_config = SimpleNamespace(
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Try to override config with local_config.py
-try:
-    from local_config import * # type: ignore
-except ImportError:
-    pass
+
+# ============================================================================
+# Local Configuration Override
+# ============================================================================
+local_config_path = os.path.join(os.path.dirname(__file__), 'local_config.py')
+
+if os.path.exists(local_config_path):
+    print(f"Loading local configuration from {local_config_path}...")
+    with open(local_config_path) as f:
+        # Execute the file's content inside the current namespace
+        exec(f.read())
