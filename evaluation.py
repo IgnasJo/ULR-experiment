@@ -13,9 +13,8 @@ from torchvision import transforms
 from esrgan import Generator
 from modeling.deeplab import DeepLab
 from utils2.metrics import Evaluator
-from utils2.BleedingEdgeEvaluator import BleedingEdgeEvaluator
 from training.dataloder import create_eval_loader
-from config import evaluation_config, format_config, get_checkpoint_path
+from config import evaluation_config, format_config, training_config, get_checkpoint_path
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -31,7 +30,7 @@ def strip_module_state_dict(sd):
 def load_models(checkpoint_path):
     """Load generator and segmentor from joint checkpoint."""
     gen = Generator(format_config.img_channels).to(device)
-    seg = DeepLab(num_classes=14, backbone='resnet', output_stride=16,
+    seg = DeepLab(num_classes=3+training_config.num_classes, backbone='resnet', output_stride=16,
                   sync_bn=None, freeze_bn=False).to(device)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     gen.load_state_dict(strip_module_state_dict(ckpt['gen_state_dict']))
@@ -47,7 +46,6 @@ def save_outputs(sr_tensor, seg_pred, filename, output_folder):
     
     # Save SR image (same postprocess as inference.py)
     sr_img = sr_tensor.squeeze(0).cpu().detach()
-    sr_img = (sr_img * 0.5 + 0.5).clamp(0, 1)
     sr_pil = transforms.ToPILImage()(sr_img)
     sr_pil.save(os.path.join(output_folder, filename))
     
@@ -65,8 +63,7 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
     
     # 2. Initialize or Resume State
     processed_count = 0
-    evaluator = Evaluator(num_class=14)
-    edge_evaluator = BleedingEdgeEvaluator()
+    evaluator = Evaluator(num_class=3+training_config.num_classes)
 
     if os.path.exists(evaluation_checkpoint_path):
         print(f"Found checkpoint! Resuming from {evaluation_checkpoint_path}...")
@@ -75,18 +72,12 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
                 checkpoint_data = pickle.load(f)
                 evaluator = checkpoint_data['evaluator']
                 processed_count = checkpoint_data.get('processed_count', 0)
-                
-                if 'edge_evaluator' in checkpoint_data:
-                    edge_evaluator = checkpoint_data['edge_evaluator']
-                else:
-                    print("   [INFO] Checkpoint missing 'edge_evaluator'. Starting fresh for edge metrics.")
 
             print(f"   > Resuming with {processed_count} images already processed.")
         except Exception as e:
             print(f"   [ERROR] Could not load checkpoint: {e}")
             print("   > Starting fresh instead.")
-            evaluator = Evaluator(num_class=14)
-            edge_evaluator = BleedingEdgeEvaluator()
+            evaluator = Evaluator(num_class=3+training_config.num_classes)
             processed_count = 0
     else:
         print("Starting fresh evaluation...")
@@ -134,7 +125,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         
         # Update metrics (use add_batch_with_boundaries for boundary metrics)
         evaluator.add_batch_with_boundaries(gt_np, pred_np)
-        edge_evaluator.add_batch(gt_np, pred_np)
         
         # Update progress bar
         current_miou = evaluator.Mean_Intersection_over_Union()
@@ -145,7 +135,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         processed_count = i + 1
         checkpoint_data = {
             'evaluator': evaluator,
-            'edge_evaluator': edge_evaluator,
             'processed_count': processed_count
         }
         with open(evaluation_checkpoint_path, 'wb') as f:
@@ -187,12 +176,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         f.write(f"Hausdorff Distance: {all_metrics['Hausdorff_Distance']:.4f}\n")
         f.write(f"Mean Hausdorff Distance: {all_metrics['Mean_Hausdorff_Distance']:.4f}\n")
         f.write(f"Average Surface Distance: {all_metrics['Average_Surface_Distance']:.4f}\n")
-        
-    # Generate and Save Plots
-    print("\nGenerating Boundary Analysis Plots...")
-    edge_evaluator.plot_bleeding_edge(save_path=os.path.join(output_folder, "bleeding_edge_error.png"))
-    edge_evaluator.plot_bf_curve(save_path=os.path.join(output_folder, "bf_score_curve.png"))
-    print("Done.")
 
 
 if __name__ == "__main__":
