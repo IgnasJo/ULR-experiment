@@ -16,15 +16,16 @@ def apply_spectral_norm(module):
 
 
 
-def pretrain_sr(save_path="pretrained_generator.pth"):
+def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained_discriminator.pth"):
     """
     Pretrain the SR Generator.
     
     Args:
-        save_path: Path to save the final pretrained weights
+        save_path: Path to save the final pretrained generator weights
+        save_disc_path: Path to save the final pretrained discriminator weights
         
     Returns:
-        Path to saved pretrained weights
+        Tuple of (generator_path, discriminator_path)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[SR PRETRAIN] Device: {device}")
@@ -165,11 +166,20 @@ def pretrain_sr(save_path="pretrained_generator.pth"):
             print(f"[SR PRETRAIN] Checkpoint saved to: {ckpt_path}")
 
     # Save final pretrained weights
-    final_path = get_checkpoint_path(save_path)
-    torch.save(generator.state_dict(), final_path)
-    print(f"[SR PRETRAIN] Finished successfully. Saved to: {final_path}")
+    final_gen_path = get_checkpoint_path(save_path)
+    torch.save(generator.state_dict(), final_gen_path)
+    print(f"[SR PRETRAIN] Generator saved to: {final_gen_path}")
     
-    return final_path
+    # Save discriminator weights for Phase 2 joint training
+    # Note: Phase 2 discriminator has different input channels (3+N),
+    # but the loading function handles the channel mismatch automatically
+    final_disc_path = get_checkpoint_path(save_disc_path)
+    torch.save(discriminator.state_dict(), final_disc_path)
+    print(f"[SR PRETRAIN] Discriminator saved to: {final_disc_path}")
+    
+    print(f"[SR PRETRAIN] Finished successfully.")
+    
+    return final_gen_path, final_disc_path
 
 
 if __name__ == "__main__":

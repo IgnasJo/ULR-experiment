@@ -21,6 +21,133 @@ def apply_spectral_norm(module):
     if isinstance(module, (nn.Conv2d, nn.Linear)):
         nn.utils.spectral_norm(module)
 
+
+def load_pretrained_discriminator_weights(discriminator, pretrained_path, num_classes, device='cuda'):
+    """
+    Load Phase 1 pretrained discriminator (3-channel input) into Phase 2 discriminator 
+    (3 + num_classes channel input) with smart weight initialization.
+    
+    Strategy:
+    - Copy RGB channel weights (first 3 channels) from pretrained model
+    - Zero-initialize weights for new segmentation mask channels
+    - This ensures the discriminator initially ignores segmentation masks,
+      behaving exactly like pretrained model at step 0
+    
+    Args:
+        discriminator: Phase 2 Discriminator model (in_channels = 3 + num_classes)
+        pretrained_path: Path to pretrained_discriminator.pth from Phase 1
+        num_classes: Number of segmentation classes
+        device: Device to load weights onto
+    
+    Returns:
+        discriminator: Model with loaded weights
+    """
+    if not os.path.exists(pretrained_path):
+        print(f"[Warning] Pretrained discriminator not found at: {pretrained_path}")
+        print("[Warning] Training discriminator from scratch...")
+        return discriminator
+    
+    print(f"[Joint] Loading pretrained discriminator from: {pretrained_path}")
+    
+    # Load pretrained state dict (3-channel input)
+    pretrained_state = torch.load(pretrained_path, map_location=device)
+    
+    # Get current model state dict
+    model_state = discriminator.state_dict()
+    
+    # The first conv layer key - check for both regular and spectral norm wrapped versions
+    # Regular: 'blocks.0.conv.weight'
+    # Spectral norm wrapped: 'blocks.0.conv.weight_orig'
+    first_layer_weight_key = 'blocks.0.conv.weight'
+    first_layer_weight_key_sn = 'blocks.0.conv.weight_orig'  # spectral norm version
+    first_layer_bias_key = 'blocks.0.conv.bias'
+    
+    # Determine which key exists in pretrained weights
+    if first_layer_weight_key_sn in pretrained_state:
+        # Spectral norm was applied during pretraining
+        using_spectral_norm = True
+        actual_weight_key = first_layer_weight_key_sn
+        print(f"  [Info] Detected spectral norm wrapped weights (using '{actual_weight_key}')")
+    elif first_layer_weight_key in pretrained_state:
+        # Regular weights without spectral norm
+        using_spectral_norm = False
+        actual_weight_key = first_layer_weight_key
+        print(f"  [Info] Detected regular weights (using '{actual_weight_key}')")
+    else:
+        print(f"[Error] Could not find first layer weights in pretrained state")
+        print(f"  Looked for: '{first_layer_weight_key}' or '{first_layer_weight_key_sn}'")
+        print(f"  Available keys: {list(pretrained_state.keys())[:10]}...")
+        print("[Warning] Training discriminator from scratch...")
+        return discriminator
+    
+    # Process each key in pretrained state
+    new_state = {}
+    for key, pretrained_tensor in pretrained_state.items():
+        if key == actual_weight_key:
+            # Shape: [out_channels, in_channels, kernel_h, kernel_w]
+            # Pretrained: [64, 3, 3, 3]
+            # Target:     [64, 3+num_classes, 3, 3]
+            
+            pretrained_shape = pretrained_tensor.shape  # [64, 3, 3, 3]
+            
+            # Model doesn't have spectral norm yet (applied after loading),
+            # so always use 'blocks.0.conv.weight' as the target key
+            target_key = first_layer_weight_key  # Always 'blocks.0.conv.weight'
+            target_shape = model_state[target_key].shape  # [64, 17, 3, 3] for num_classes=14
+            
+            out_channels = pretrained_shape[0]
+            rgb_channels = pretrained_shape[1]  # 3
+            kernel_h, kernel_w = pretrained_shape[2], pretrained_shape[3]
+            
+            print(f"  First layer shape mismatch: pretrained={list(pretrained_shape)} -> target={list(target_shape)}")
+            
+            # Create new weight tensor with zeros
+            new_weight = torch.zeros(target_shape, dtype=pretrained_tensor.dtype, device=device)
+            
+            # Copy RGB weights (first 3 channels)
+            new_weight[:, :rgb_channels, :, :] = pretrained_tensor
+            
+            # Remaining channels (segmentation masks) stay zero-initialized
+            # This ensures discriminator ignores mask channels initially
+            
+            print(f"  Copied RGB weights (channels 0-2), zero-initialized mask weights (channels 3-{target_shape[1]-1})")
+            new_state[target_key] = new_weight
+            
+        else:
+            # All other layers: direct copy (shapes should match)
+            # Handle spectral norm key mapping: weight_orig -> weight
+            # because model doesn't have spectral norm yet (applied after loading)
+            mapped_key = key
+            if '_orig' in key:
+                mapped_key = key.replace('_orig', '')  # weight_orig -> weight
+            
+            # Skip spectral norm internal buffers (weight_u, weight_v) - not needed before SN is applied
+            if key.endswith('_u') or key.endswith('_v'):
+                continue
+            
+            if mapped_key in model_state:
+                if pretrained_tensor.shape == model_state[mapped_key].shape:
+                    new_state[mapped_key] = pretrained_tensor
+                else:
+                    print(f"  [Warning] Shape mismatch for '{mapped_key}': {pretrained_tensor.shape} vs {model_state[mapped_key].shape}, skipping")
+            else:
+                print(f"  [Warning] Key '{mapped_key}' not found in model, skipping")
+    
+    # Load the processed state dict
+    # Use strict=False to allow for any missing keys (shouldn't happen, but safe)
+    missing_keys, unexpected_keys = discriminator.load_state_dict(new_state, strict=False)
+    
+    if missing_keys:
+        print(f"  [Info] Keys not loaded from pretrained (using default init): {missing_keys}")
+    if unexpected_keys:
+        print(f"  [Warning] Unexpected keys in pretrained: {unexpected_keys}")
+    
+    print("[Joint] Pretrained discriminator weights loaded successfully!")
+    print(f"  -> RGB channels: copied from pretrained")
+    print(f"  -> Mask channels: zero-initialized (discriminator ignores masks at step 0)")
+    
+    return discriminator
+
 def to_one_hot(tensor, num_classes):
     """
     Converts label tensor [B, H, W] to one-hot tensor [B, C, H, W]
@@ -64,12 +191,16 @@ def feature_loss_calc(f_real, f_fake):
     return l1 + l_cos
 
 
-def train_joint(pretrained_generator_path=None):
+def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=None):
     """
     Joint training of Generator and Segmentor.
     
     Args:
         pretrained_generator_path: Path to pretrained generator weights (optional)
+        pretrained_discriminator_path: Path to pretrained discriminator weights (optional)
+            Note: Phase 1 discriminator has 3 input channels (RGB only).
+            Phase 2 discriminator has 3 + num_classes channels (RGB + masks).
+            The loading function handles this mismatch automatically.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Starting Joint Training on {device}...")
@@ -95,6 +226,16 @@ def train_joint(pretrained_generator_path=None):
     disc_in_channels = 3 + training_config.num_classes
     
     discriminator = Discriminator(in_channels=disc_in_channels, disc_config=disc_config).to(device)
+
+    # Load pretrained discriminator weights if provided
+    # Handles shape mismatch: Phase 1 (3ch) -> Phase 2 (3 + num_classes ch)
+    if pretrained_discriminator_path:
+        discriminator = load_pretrained_discriminator_weights(
+            discriminator, 
+            pretrained_discriminator_path, 
+            training_config.num_classes, 
+            device
+        )
 
     # IMPLEMENTATION: Apply Spectral Normalization to SAD weights
     # This bounds the Lipschitz constant to stabilize training

@@ -93,14 +93,15 @@ def run_batch_inference(checkpoint_path=None, test_dir=None, output_dir=None):
     print("="*60)
 
 
-def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_path="pretrained_generator.pth", run_eval=False):
+def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_gen_path="pretrained_generator.pth", pretrained_disc_path="pretrained_discriminator.pth", run_eval=False):
     """
     Run the full training pipeline.
     
     Args:
         skip_pretrain: Skip pretraining and load existing weights
         pretrain_only: Only run pretraining phase
-        pretrained_path: Path to save/load pretrained weights
+        pretrained_gen_path: Path to save/load pretrained generator weights
+        pretrained_disc_path: Path to pretrained discriminator weights (from Phase 1)
         run_eval: Run evaluation after training
     """
     print("\n" + "="*60)
@@ -110,11 +111,14 @@ def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_path=
     # Phase 1: Pretraining
     if not skip_pretrain:
         print("\n[Pipeline] Starting Phase 1: Pretraining...")
-        pretrained_path = pretrain_sr(save_path=pretrained_path)
+        pretrained_gen_path, pretrained_disc_path = pretrain_sr(
+            save_path=pretrained_gen_path, 
+            save_disc_path=pretrained_disc_path
+        )
     else:
-        print(f"\n[Pipeline] Skipping pretraining, will load from: {pretrained_path}")
-        if not os.path.exists(pretrained_path):
-            print(f"[Error] Pretrained weights not found at: {pretrained_path}")
+        print(f"\n[Pipeline] Skipping pretraining, will load from: {pretrained_gen_path}")
+        if not os.path.exists(pretrained_gen_path):
+            print(f"[Error] Pretrained weights not found at: {pretrained_gen_path}")
             print("[Error] Please run pretraining first or provide valid path.")
             return
     
@@ -122,7 +126,12 @@ def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_path=
     joint_checkpoint = get_checkpoint_path("joint_checkpoint_final.pth")
     if not pretrain_only:
         print("\n[Pipeline] Starting Phase 2: Joint Training...")
-        train_joint(pretrained_generator_path=pretrained_path)
+        # Pass both generator and discriminator pretrained weights
+        # Discriminator loading handles channel mismatch (3ch -> 3+N ch) automatically
+        disc_path = pretrained_disc_path if os.path.exists(pretrained_disc_path) else None
+        if disc_path:
+            print(f"[Pipeline] Will load pretrained discriminator from: {disc_path}")
+        train_joint(pretrained_generator_path=pretrained_gen_path, pretrained_discriminator_path=disc_path)
         print(f"[Pipeline] Joint training completed. Checkpoint: {joint_checkpoint}")
     else:
         print("\n[Pipeline] Pretraining only mode - skipping joint training.")
@@ -145,8 +154,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full Training Pipeline")
     parser.add_argument("--skip-pretrain", action="store_true", help="Skip pretraining, load existing weights")
     parser.add_argument("--pretrain-only", action="store_true", help="Only run pretraining")
-    parser.add_argument("--pretrained-path", type=str, default="pretrained_generator.pth", help="Path for pretrained weights")
-    parser.add_argument("--joint-only", type=str, default=None, help="Run only joint training with specified weights")
+    parser.add_argument("--pretrained-gen", type=str, default="pretrained_generator.pth", help="Path for pretrained generator weights")
+    parser.add_argument("--pretrained-disc", type=str, default="pretrained_discriminator.pth", help="Path for pretrained discriminator weights")
+    parser.add_argument("--joint-only", type=str, default=None, help="Run only joint training with specified generator weights")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation after training")
     parser.add_argument("--eval-only", action="store_true", help="Run only evaluation (skip training)")
     parser.add_argument("--batch-inference", action="store_true", help="Run batch inference on separate test folder")
@@ -165,11 +175,14 @@ if __name__ == "__main__":
     elif args.eval_only:
         run_evaluation(checkpoint_path=args.checkpoint, output_dir=args.eval_output)
     elif args.joint_only:
-        train_joint(pretrained_generator_path=args.joint_only)
+        # When running joint-only, also check for discriminator weights
+        disc_path = args.pretrained_disc if os.path.exists(args.pretrained_disc) else None
+        train_joint(pretrained_generator_path=args.joint_only, pretrained_discriminator_path=disc_path)
     else:
         run_full_pipeline(
             skip_pretrain=args.skip_pretrain,
             pretrain_only=args.pretrain_only,
-            pretrained_path=args.pretrained_path,
+            pretrained_gen_path=args.pretrained_gen,
+            pretrained_disc_path=args.pretrained_disc,
             run_eval=args.evaluate
         )
