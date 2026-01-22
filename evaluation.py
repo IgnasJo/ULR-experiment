@@ -132,8 +132,8 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         gt_np = gt_mask.squeeze().cpu().numpy()
         pred_np = seg_pred.squeeze().cpu().numpy()
         
-        # Update metrics
-        evaluator.add_batch(gt_np, pred_np)
+        # Update metrics (use add_batch_with_boundaries for boundary metrics)
+        evaluator.add_batch_with_boundaries(gt_np, pred_np)
         edge_evaluator.add_batch(gt_np, pred_np)
         
         # Update progress bar
@@ -155,17 +155,38 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
     print("\n" + "=" * 30)
     print("FINAL METRICS")
     print("=" * 30)
-    print(f"mIoU:      {evaluator.Mean_Intersection_over_Union():.4f}")
-    print(f"PA:        {evaluator.Pixel_Accuracy():.4f}")
-    print(f"PA Class:  {evaluator.Pixel_Accuracy_Class():.4f}")
-    print(f"FWIoU:     {evaluator.Frequency_Weighted_Intersection_over_Union():.4f}")
+    
+    # Get all metrics at once
+    all_metrics = evaluator.get_all_metrics(tau=2, alpha=1.0)
+    
+    # Print pixel-level metrics
+    print("--- Pixel-Level Metrics ---")
+    print(f"mIoU:      {all_metrics['mIoU']:.4f}")
+    print(f"PA:        {all_metrics['Pixel_Accuracy']:.4f}")
+    print(f"PA Class:  {all_metrics['Pixel_Accuracy_Class']:.4f}")
+    print(f"FWIoU:     {all_metrics['FWIoU']:.4f}")
+    
+    # Print boundary metrics
+    print("\n--- Boundary Metrics (tau=2) ---")
+    print(f"Boundary F1:              {all_metrics['Boundary_F1']:.4f}")
+    print(f"Symmetric Boundary Dice:  {all_metrics['Symmetric_Boundary_Dice']:.4f}")
+    print(f"Hausdorff Distance:       {all_metrics['Hausdorff_Distance']:.4f}")
+    print(f"Mean Hausdorff Distance:  {all_metrics['Mean_Hausdorff_Distance']:.4f}")
+    print(f"Average Surface Distance: {all_metrics['Average_Surface_Distance']:.4f}")
     
     # Save final text report
     with open(os.path.join(output_folder, "final_results.txt"), "w") as f:
-        f.write(f"mIoU: {evaluator.Mean_Intersection_over_Union():.4f}\n")
-        f.write(f"PA:   {evaluator.Pixel_Accuracy():.4f}\n")
-        f.write(f"PA Class: {evaluator.Pixel_Accuracy_Class():.4f}\n")
-        f.write(f"FWIoU: {evaluator.Frequency_Weighted_Intersection_over_Union():.4f}\n")
+        f.write("=== Pixel-Level Metrics ===\n")
+        f.write(f"mIoU: {all_metrics['mIoU']:.4f}\n")
+        f.write(f"PA:   {all_metrics['Pixel_Accuracy']:.4f}\n")
+        f.write(f"PA Class: {all_metrics['Pixel_Accuracy_Class']:.4f}\n")
+        f.write(f"FWIoU: {all_metrics['FWIoU']:.4f}\n")
+        f.write("\n=== Boundary Metrics (tau=2) ===\n")
+        f.write(f"Boundary F1: {all_metrics['Boundary_F1']:.4f}\n")
+        f.write(f"Symmetric Boundary Dice: {all_metrics['Symmetric_Boundary_Dice']:.4f}\n")
+        f.write(f"Hausdorff Distance: {all_metrics['Hausdorff_Distance']:.4f}\n")
+        f.write(f"Mean Hausdorff Distance: {all_metrics['Mean_Hausdorff_Distance']:.4f}\n")
+        f.write(f"Average Surface Distance: {all_metrics['Average_Surface_Distance']:.4f}\n")
         
     # Generate and Save Plots
     print("\nGenerating Boundary Analysis Plots...")
