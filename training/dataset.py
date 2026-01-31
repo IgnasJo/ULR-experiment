@@ -1,13 +1,31 @@
 import os
+import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
+import torch
+from config import training_config
+
 
 class SegmentationDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None, mask_transform=None):
+    def __init__(self, image_dir, mask_dir, transform=None, mask_transform=None, compute_distance_maps=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.transform = transform
         self.mask_transform = mask_transform
+        
+        # Determine if we need distance maps based on ABL flag
+        if compute_distance_maps is None:
+            self.compute_distance_maps = getattr(training_config, 'use_abl_loss', False)
+        else:
+            self.compute_distance_maps = compute_distance_maps
+        
+        # Initialize ABL instance for distance map computation if needed
+        self.abl_helper = None
+        if self.compute_distance_maps:
+            from abl.abl import ABL
+            # Create lightweight ABL instance just for distance map computation
+            # We don't need the full loss criterion, just the helper methods
+            self.abl_helper = ABL(ignore_label=255)
         
         self.images = []
         self.masks = []
@@ -50,7 +68,26 @@ class SegmentationDataset(Dataset):
         if self.mask_transform:
             mask = self.mask_transform(mask)
 
-        return image, mask
+        # Conditionally compute ABL distance maps using ABL class methods
+        if self.compute_distance_maps and self.abl_helper is not None:
+            # Convert mask to tensor format expected by ABL methods
+            # mask is [H, W], we need [1, H, W] for batch processing
+            mask_tensor = mask.unsqueeze(0)  # [H, W] -> [1, H, W]
+            
+            # Use ABL's gt2boundary method 
+            # Note: gt2boundary expects ignore_label parameter, use the same as ABL instance
+            gt_boundary = self.abl_helper.gt2boundary(mask_tensor, ignore_label=self.abl_helper.ignore_label)
+            
+            # Use ABL's get_dist_maps method to get distance maps
+            dist_maps = self.abl_helper.get_dist_maps(gt_boundary)
+            
+            # dist_maps should be [1, H, W], but squeeze to [H, W] to match expected format
+            # The training loop will add batch dimension when batching multiple samples
+            dist_maps = dist_maps.squeeze(0)  # [1, H, W] -> [H, W]
+            
+            return image, mask, dist_maps
+        else:
+            return image, mask
 
 
 class SRPretrainDataset(Dataset):

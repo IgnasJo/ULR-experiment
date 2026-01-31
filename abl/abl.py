@@ -17,7 +17,7 @@ from operator import itemgetter
 
 # Tools
 def kl_div(a,b): # q,p
-    return F.softmax(b, dim=1) * (F.log_softmax(b, dim=1) - F.log_softmax(a, dim=1))   
+    return F.softmax(b, dim=1) * (F.log_softmax(b, dim=1) - F.log_softmax(a, dim=1))
 
 def one_hot2dist(seg):
     res = np.zeros_like(seg)
@@ -33,6 +33,22 @@ def class2one_hot(seg, C):
     res = torch.stack([seg == c for c in range(C)], dim=1).type(torch.int32)
     return res
 
+# Picklable helper functions for dist_map_transform (replacing lambdas)
+def _unsqueeze_0(img):
+    return img.unsqueeze(0)
+
+def _to_int64(nd):
+    return nd.type(torch.int64)
+
+def _to_cpu_numpy(t):
+    return t.cpu().numpy()
+
+def _to_float32_tensor(nd):
+    return torch.tensor(nd, dtype=torch.float32)
+
+def _weight_func(w, max_distance=20.):
+    return torch.clamp(w, max=max_distance) / max_distance
+
 # Active Boundary Loss
 class ABL(nn.Module):
     def __init__(self, isdetach=True, max_N_ratio = 1/100, ignore_label = 255, label_smoothing=0.2, weight = None, max_clip_dist = 20.):
@@ -42,16 +58,16 @@ class ABL(nn.Module):
         self.isdetach=isdetach
         self.max_N_ratio = max_N_ratio
 
-        self.weight_func = lambda w, max_distance=max_clip_dist: torch.clamp(w, max=max_distance) / max_distance
+        self.weight_func = partial(_weight_func, max_distance=max_clip_dist)
 
         self.dist_map_transform = transforms.Compose([
-            lambda img: img.unsqueeze(0),
-            lambda nd: nd.type(torch.int64),
+            _unsqueeze_0,
+            _to_int64,
             partial(class2one_hot, C=1),
             itemgetter(0),
-            lambda t: t.cpu().numpy(),
+            _to_cpu_numpy,
             one_hot2dist,
-            lambda nd: torch.tensor(nd, dtype=torch.float32)
+            _to_float32_tensor
         ])
 
         if label_smoothing == 0:

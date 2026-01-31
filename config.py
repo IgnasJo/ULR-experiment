@@ -32,6 +32,59 @@ def get_checkpoint_path(filename):
     return os.path.join(get_checkpoint_dir(), filename)
 
 
+def get_checkpoint_name(model_type, epoch=None, is_final=False, is_best=False, suffix=None):
+    """
+    Generate a standardized checkpoint filename.
+    
+    Args:
+        model_type: Type of model ('joint', 'generator', 'discriminator', 'pretrained_generator', 'pretrained_discriminator')
+        epoch: Current epoch number (optional)
+        is_final: Whether this is the final checkpoint
+        is_best: Whether this is the best checkpoint (by validation metric)
+        suffix: Optional additional suffix string
+        
+    Returns:
+        Checkpoint filename like 'joint_checkpoint_ep30.pth' or 'joint_checkpoint_best.pth'
+        
+    Examples:
+        >>> get_checkpoint_name('joint', epoch=30)
+        'joint_checkpoint_ep30.pth'
+        >>> get_checkpoint_name('joint', is_final=True)
+        'joint_checkpoint_final.pth'
+        >>> get_checkpoint_name('joint', is_best=True)
+        'joint_checkpoint_best.pth'
+        >>> get_checkpoint_name('pretrained_generator')
+        'pretrained_generator.pth'
+        >>> get_checkpoint_name('generator', epoch=10, suffix='lr1e-4')
+        'generator_checkpoint_ep10_lr1e-4.pth'
+    """
+    # Handle pretrained models (no 'checkpoint' in name)
+    if model_type.startswith('pretrained_'):
+        base = model_type
+    else:
+        base = f"{model_type}_checkpoint"
+    
+    # Build name parts
+    parts = [base]
+    
+    if is_best:
+        parts.append("best")
+    elif is_final:
+        parts.append("final")
+    elif epoch is not None:
+        parts.append(f"ep{epoch}")
+    
+    if suffix:
+        parts.append(suffix)
+    
+    # Join with underscores and add extension
+    if len(parts) == 1:
+        # For pretrained models without epoch/final/best
+        return f"{parts[0]}.pth"
+    else:
+        return f"{'_'.join(parts)}.pth"
+
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -65,6 +118,7 @@ training_config = SimpleNamespace(
   lambda_2 = 0.01, # Weight for Feature Loss
   lambda_3 = 0.005, # Weight for Adversarial Loss (lowered to reduce L_Adv explosion)
   lambda_abl = 0.02, # start small (ABL is strong)
+  use_abl_loss = True,  # Flag to enable/disable ABL loss
   # GAN Stability
   label_smoothing_real = 0.9,  # One-sided label smoothing for discriminator
   d_update_freq = 1,  # Update discriminator every N iterations (increase if D too strong)

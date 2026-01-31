@@ -54,7 +54,8 @@ train_dataset = SegmentationDataset(
     image_dir=training_config.image_dir,
     mask_dir=training_config.mask_dir,
     transform=train_transform,
-    mask_transform=mask_transform
+    mask_transform=mask_transform,
+    compute_distance_maps=training_config.use_abl_loss  # Only compute distance maps if ABL is enabled
 )
 
 # Instantiate the DataLoader

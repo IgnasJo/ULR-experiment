@@ -14,7 +14,7 @@ from utils2.loss import SegmentationLosses
 from utils2.lr_scheduler import LR_Scheduler
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import train_loader 
-from config import training_config, format_config, get_checkpoint_path
+from config import training_config, format_config, get_checkpoint_path, get_checkpoint_name
 
 def apply_spectral_norm(module):
     """Recursively applies spectral normalization to Conv2d and Linear layers."""
@@ -262,14 +262,16 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     # 3. Loss Functions
     criterion_l2 = nn.MSELoss()        # Eq (2)
 
-
-    criterion_abl = ABL(
-        isdetach=True,
-        max_N_ratio=1/100,
-        ignore_label=255,
-        label_smoothing=0.0,     # IMPORTANT: disable smoothing for stability
-        max_clip_dist=20.0
-    ).to(device)
+    # Initialize ABL criterion only if enabled
+    criterion_abl = None
+    if training_config.use_abl_loss:
+        criterion_abl = ABL(
+            isdetach=True,
+            max_N_ratio=1/100,
+            ignore_label=255,
+            label_smoothing=0.0,     # IMPORTANT: disable smoothing for stability
+            max_clip_dist=20.0
+        ).to(device)
 
     criterion_gan = nn.BCEWithLogitsLoss() # Eq (7, 8)
     criterion_ce = SegmentationLosses(weight=None, cuda=torch.cuda.is_available()).build_loss(mode='ce') # Eq (3)
@@ -296,8 +298,17 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
         
         tbar = tqdm(train_loader)
         
-        for i, (images, masks) in enumerate(tbar):
+        for i, batch_data in enumerate(tbar):
             scheduler(opt_seg, i, epoch, best_pred)
+
+            # Handle conditional distance maps based on ABL flag
+            if training_config.use_abl_loss:
+                # When ABL is enabled: (images, masks, distance_maps)
+                images, masks, distance_maps = batch_data
+                distance_maps = distance_maps.to(device)
+            else:
+                # When ABL is disabled: (images, masks)
+                images, masks = batch_data
 
             # Data Prep
             real_img = images.to(device)  # I_gt
@@ -405,10 +416,13 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             # B. Calculate Segmentation Loss (L_ce) - Eq (3)
             loss_ce = criterion_ce(seg_logits, masks_gt)
 
-            loss_abl = criterion_abl(seg_logits, masks_gt)
-
-            # ABL may return None if no boundaries are detected
-            if loss_abl is None:
+            # Calculate ABL loss only if enabled (pass pre-computed dist_maps)
+            if training_config.use_abl_loss and criterion_abl is not None:
+                loss_abl = criterion_abl(seg_logits, masks_gt, dist_maps=distance_maps)
+                # ABL may return None if no boundaries are detected
+                if loss_abl is None:
+                    loss_abl = torch.tensor(0.0, device=device)
+            else:
                 loss_abl = torch.tensor(0.0, device=device)
 
 
@@ -419,7 +433,9 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
                        (training_config.lambda_2 * loss_fea) + \
                        (training_config.lambda_3 * loss_adv)
             
-            total_loss = ((1 - training_config.alpha) * gen_part) + (training_config.alpha * loss_ce) + (training_config.lambda_abl * loss_abl)
+            # Include ABL loss only if enabled
+            abl_component = (training_config.lambda_abl * loss_abl) if training_config.use_abl_loss else 0
+            total_loss = ((1 - training_config.alpha) * gen_part) + (training_config.alpha * loss_ce) + abl_component
             
             # Check for NaN before backward pass
             if torch.isnan(total_loss) or torch.isinf(total_loss):
@@ -440,7 +456,10 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
 
             # Display
             current_lr = opt_seg.param_groups[0]['lr']
-            tbar.set_description(f"Ep {epoch+1} | L_D: {loss_d.item():.3f} | L_2: {loss_2.item():.3f} | L_CE: {loss_ce.item():.3f} | L_Adv: {loss_adv.item():.3f} | L_abl: {loss_abl.item():.3f}")
+            if training_config.use_abl_loss:
+                tbar.set_description(f"Ep {epoch+1} | L_D: {loss_d.item():.3f} | L_2: {loss_2.item():.3f} | L_CE: {loss_ce.item():.3f} | L_Adv: {loss_adv.item():.3f} | L_abl: {loss_abl.item():.3f}")
+            else:
+                tbar.set_description(f"Ep {epoch+1} | L_D: {loss_d.item():.3f} | L_2: {loss_2.item():.3f} | L_CE: {loss_ce.item():.3f} | L_Adv: {loss_adv.item():.3f}")
 
         # Checkpointing - save as single file compatible with inference.py load_models()
         if (epoch + 1) % 5 == 0:
@@ -449,7 +468,8 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
                 'seg_state_dict': segmentor.state_dict(),
                 'epoch': epoch + 1
             }
-            ckpt_path = get_checkpoint_path(f"joint_checkpoint_ep{epoch+1}.pth")
+            ckpt_name = get_checkpoint_name('joint', epoch=epoch + 1)
+            ckpt_path = get_checkpoint_path(ckpt_name)
             torch.save(checkpoint, ckpt_path)
             print(f"[Joint] Checkpoint saved to: {ckpt_path}")
     
@@ -459,7 +479,8 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
         'seg_state_dict': segmentor.state_dict(),
         'epoch': training_config.num_epochs
     }
-    final_path = get_checkpoint_path("joint_checkpoint_final.pth")
+    final_name = get_checkpoint_name('joint', is_final=True)
+    final_path = get_checkpoint_path(final_name)
     torch.save(final_checkpoint, final_path)
     print(f"[Joint] Training complete. Final checkpoint saved to: {final_path}")
 

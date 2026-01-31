@@ -30,7 +30,7 @@ def strip_module_state_dict(sd):
 def load_models(checkpoint_path):
     """Load generator and segmentor from joint checkpoint."""
     gen = Generator(format_config.img_channels).to(device)
-    seg = DeepLab(num_classes=3+training_config.num_classes, backbone='resnet', output_stride=16,
+    seg = DeepLab(num_classes=training_config.num_classes, backbone='resnet', output_stride=16,
                   sync_bn=None, freeze_bn=False).to(device)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     gen.load_state_dict(strip_module_state_dict(ckpt['gen_state_dict']))
@@ -63,7 +63,7 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
     
     # 2. Initialize or Resume State
     processed_count = 0
-    evaluator = Evaluator(num_class=3+training_config.num_classes)
+    evaluator = Evaluator(num_class=training_config.num_classes)
 
     if os.path.exists(evaluation_checkpoint_path):
         print(f"Found checkpoint! Resuming from {evaluation_checkpoint_path}...")
@@ -77,7 +77,7 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         except Exception as e:
             print(f"   [ERROR] Could not load checkpoint: {e}")
             print("   > Starting fresh instead.")
-            evaluator = Evaluator(num_class=3+training_config.num_classes)
+            evaluator = Evaluator(num_class=training_config.num_classes)
             processed_count = 0
     else:
         print("Starting fresh evaluation...")
