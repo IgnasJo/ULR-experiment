@@ -30,7 +30,8 @@ train_joint = training_module.train_joint
 from pretraining import pretrain_sr
 from evaluation import evaluate
 from batch_inference import batch_inference
-from config import evaluation_config, get_checkpoint_path
+from config import evaluation_config, checkpoint_config
+from paths import get_checkpoint_path
 
 
 def run_evaluation(checkpoint_path=None, output_dir=None):
@@ -45,9 +46,9 @@ def run_evaluation(checkpoint_path=None, output_dir=None):
     print("EVALUATION")
     print("="*60)
     
-    ckpt = checkpoint_path or get_checkpoint_path(evaluation_config.checkpoint_path)
-    out_dir = output_dir or evaluation_config.evaluation_dir
-    eval_ckpt = get_checkpoint_path("evaluation_checkpoint.pkl")
+    ckpt = checkpoint_path or get_checkpoint_path(checkpoint_config.joint_filename)
+    out_dir = output_dir or evaluation_config.output_dir
+    eval_ckpt = get_checkpoint_path(checkpoint_config.eval_checkpoint_filename)
     
     print(f"Checkpoint: {ckpt}")
     print(f"Output dir: {out_dir}")
@@ -78,7 +79,7 @@ def run_batch_inference(checkpoint_path=None, test_dir=None, output_dir=None):
     print("BATCH INFERENCE")
     print("="*60)
     
-    ckpt = checkpoint_path or get_checkpoint_path(evaluation_config.checkpoint_path)
+    ckpt = checkpoint_path or get_checkpoint_path(checkpoint_config.joint_filename)
     test = test_dir or evaluation_config.test_dir
     out_dir = output_dir or "batch_inference_output"
     

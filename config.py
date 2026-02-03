@@ -1,151 +1,140 @@
-"""Global configuration values, various training, evaluation parameters, magic values. Can override with local_config.py"""
+"""
+Global configuration - Pure data only, no functions.
 
-import torch
+Architecture:
+- model_config: Immutable model architecture (num_classes, channels, resolutions)
+- training_config: Training hyperparameters (can be modified per experiment)
+- pretraining_config: Pretraining specific parameters
+- evaluation_config: Evaluation/inference paths
+- checkpoint_config: Checkpoint directory settings
+
+Usage:
+    # Option 1: Direct modification (same process)
+    import config
+    config.checkpoint_config.base_dir = '/path/to/checkpoints'
+    
+    # Option 2: Environment variables (for subprocesses)
+    export ULR_CHECKPOINT_DIR=/path/to/checkpoints
+    export ULR_USE_ABL=True
+"""
+
 import os
-from datetime import datetime
+import torch
 from types import SimpleNamespace
 
 
-# ============================================================================
-# Checkpoint Directory Management
-# ============================================================================
-def get_checkpoint_dir():
-    """
-    Get the checkpoint directory for today's date.
-    Creates folder structure: checkpoints/MM-DD/
-    """
-    date_str = datetime.now().strftime("%m-%d")
-    checkpoint_dir = os.path.join("checkpoints", date_str)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    return checkpoint_dir
-
-def get_checkpoint_path(filename):
-    """
-    Get full path for a checkpoint file in today's dated folder.
-    
-    Args:
-        filename: Name of the checkpoint file (e.g., 'joint_checkpoint_final.pth')
-        
-    Returns:
-        Full path like 'checkpoints/01-20/joint_checkpoint_final.pth'
-    """
-    return os.path.join(get_checkpoint_dir(), filename)
-
-
-def get_checkpoint_name(model_type, epoch=None, is_final=False, is_best=False, suffix=None):
-    """
-    Generate a standardized checkpoint filename.
-    
-    Args:
-        model_type: Type of model ('joint', 'generator', 'discriminator', 'pretrained_generator', 'pretrained_discriminator')
-        epoch: Current epoch number (optional)
-        is_final: Whether this is the final checkpoint
-        is_best: Whether this is the best checkpoint (by validation metric)
-        suffix: Optional additional suffix string
-        
-    Returns:
-        Checkpoint filename like 'joint_checkpoint_ep30.pth' or 'joint_checkpoint_best.pth'
-        
-    Examples:
-        >>> get_checkpoint_name('joint', epoch=30)
-        'joint_checkpoint_ep30.pth'
-        >>> get_checkpoint_name('joint', is_final=True)
-        'joint_checkpoint_final.pth'
-        >>> get_checkpoint_name('joint', is_best=True)
-        'joint_checkpoint_best.pth'
-        >>> get_checkpoint_name('pretrained_generator')
-        'pretrained_generator.pth'
-        >>> get_checkpoint_name('generator', epoch=10, suffix='lr1e-4')
-        'generator_checkpoint_ep10_lr1e-4.pth'
-    """
-    # Handle pretrained models (no 'checkpoint' in name)
-    if model_type.startswith('pretrained_'):
-        base = model_type
-    else:
-        base = f"{model_type}_checkpoint"
-    
-    # Build name parts
-    parts = [base]
-    
-    if is_best:
-        parts.append("best")
-    elif is_final:
-        parts.append("final")
-    elif epoch is not None:
-        parts.append(f"ep{epoch}")
-    
-    if suffix:
-        parts.append(suffix)
-    
-    # Join with underscores and add extension
-    if len(parts) == 1:
-        # For pretrained models without epoch/final/best
-        return f"{parts[0]}.pth"
-    else:
-        return f"{'_'.join(parts)}.pth"
+def _env(key: str, default, type_fn=str):
+    """Get environment variable with type conversion."""
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    if type_fn == bool:
+        return val.lower() in ('true', '1', 'yes')
+    return type_fn(val)
 
 
 # ============================================================================
-# Configuration
+# Model Architecture (IMMUTABLE - shared across all experiments)
+# ============================================================================
+model_config = SimpleNamespace(
+    num_classes = 14,           # Segmentation classes (including background)
+    img_channels = 3,           # RGB
+    ultra_low_resolution = 16,  # ULR input size
+    low_resolution = 96,        # LR intermediate size  
+    high_resolution = 384,      # HR output size (low_resolution * 4)
+)
+
+
+# ============================================================================
+# Checkpoint Settings
+# ============================================================================
+checkpoint_config = SimpleNamespace(
+    base_dir = _env('ULR_CHECKPOINT_DIR', 'checkpoints'),
+    joint_filename = "joint_checkpoint_final.pth",
+    pretrained_gen_filename = "pretrained_generator.pth",
+    pretrained_disc_filename = "pretrained_discriminator.pth",
+    eval_checkpoint_filename = "evaluation_checkpoint.pkl",
+)
+
+
+# ============================================================================
+# Training Configuration
+# ============================================================================
+training_config = SimpleNamespace(
+    # Epochs
+    num_epochs = _env('ULR_TRAIN_EPOCHS', 2, int),
+    
+    # Batch size
+    batch_size = _env('ULR_BATCH_SIZE', 1, int),
+    
+    # Learning rates
+    generator_lr = _env('ULR_GENERATOR_LR', 1e-4, float),
+    discriminator_lr = _env('ULR_DISCRIMINATOR_LR', 1e-5, float),
+    segmentor_lr = _env('ULR_SEGMENTOR_LR', 1e-2, float),
+    lr_scheduler = _env('ULR_LR_SCHEDULER', 'poly'),
+    
+    # Loss weights (Eq 1: L_tot = (1-α)(λ1*L2 + λ2*L_fea + λ3*L_adv) + α*L_ce + λ_abl*L_abl)
+    alpha = _env('ULR_ALPHA', 0.3, float),
+    lambda_1 = _env('ULR_LAMBDA_1', 0.5, float),
+    lambda_2 = _env('ULR_LAMBDA_2', 0.01, float),
+    lambda_3 = _env('ULR_LAMBDA_3', 0.005, float),
+    
+    # Active Boundary Loss
+    use_abl_loss = _env('ULR_USE_ABL', False, bool),
+    lambda_abl = _env('ULR_LAMBDA_ABL', 0.02, float),
+    
+    # GAN Stability
+    label_smoothing_real = _env('ULR_LABEL_SMOOTHING', 0.9, float),
+    d_update_freq = _env('ULR_D_UPDATE_FREQ', 1, int),
+    
+    # Data paths (override per experiment)
+    image_dir = _env('ULR_TRAIN_RGB', r'datasets\custom_demo\rgb'),
+    mask_dir = _env('ULR_TRAIN_LABEL', r'datasets\custom_demo\label'),
+)
+
+
+# ============================================================================
+# Pretraining Configuration
+# ============================================================================
+pretraining_config = SimpleNamespace(
+    num_epochs = _env('ULR_PRETRAIN_EPOCHS', 2, int),
+    batch_size = _env('ULR_PRETRAIN_BATCH_SIZE', 2, int),
+    
+    # Loss weights
+    vgg_weight = _env('ULR_VGG_WEIGHT', 5e-3, float),
+    gan_weight = _env('ULR_GAN_WEIGHT', 1e-2, float),
+    
+    # Learning rates
+    generator_lr = _env('ULR_PRETRAIN_GENERATOR_LR', 1e-4, float),
+    discriminator_lr = _env('ULR_PRETRAIN_DISCRIMINATOR_LR', 1e-5, float),
+    
+    # Data path
+    hr_image_dir = _env('ULR_TRAIN_RGB', r'datasets\custom_demo\rgb'),
+)
+
+
+# ============================================================================
+# Evaluation Configuration
 # ============================================================================
 evaluation_config = SimpleNamespace(
-  test_dir = r'datasets\custom_demo\rgb',
-  test_dir_gt = r'datasets\custom_demo\label',
-  checkpoint_path = r'joint_checkpoint_final.pth',  # Will be resolved via get_checkpoint_path()
-  evaluation_dir = 'evaluation_output',
+    test_dir = _env('ULR_TEST_RGB', r'datasets\custom_demo\rgb'),
+    test_dir_gt = _env('ULR_TEST_LABEL', r'datasets\custom_demo\label'),
+    output_dir = _env('ULR_EVAL_OUTPUT_DIR', 'evaluation_output'),
 )
 
-format_config = SimpleNamespace(
-  ultra_low_resolution = 16,
-  low_resolution = 96,
-  img_channels = 3
-)
-format_config.high_resolution = format_config.low_resolution * 4
 
-
-training_config = SimpleNamespace(
-  num_classes = 14, # Count with default "background" class
-  num_epochs = 2,
-  batch_size = 1,
-  generator_lr = 1e-4,
-  discriminator_lr = 1e-5,  # Lowered from 1e-4 to slow down discriminator
-  segmentor_lr = 1e-2,
-  lr_scheduler = 'poly',
-  LEARNING_RATE = 1e-4,
-  # Loss Weights
-  alpha = 0.3,     # Balancing parameter between Generative and Segmentation loss
-  lambda_1 = 0.5,  # Weight for L2 Pixel Loss
-  lambda_2 = 0.01, # Weight for Feature Loss
-  lambda_3 = 0.005, # Weight for Adversarial Loss (lowered to reduce L_Adv explosion)
-  lambda_abl = 0.02, # start small (ABL is strong)
-  use_abl_loss = True,  # Flag to enable/disable ABL loss
-  # GAN Stability
-  label_smoothing_real = 0.9,  # One-sided label smoothing for discriminator
-  d_update_freq = 1,  # Update discriminator every N iterations (increase if D too strong)
-  image_dir = r'datasets\custom_demo\rgb',
-  mask_dir = r'datasets\custom_demo\label'
-)
-
-pretraining_config = SimpleNamespace(
-  num_epochs = 2,
-  vgg_weight = 5e-3,
-  gan_weight = 1e-2,
-  batch_size = 2,  # Reduced from 16 to avoid CUDA OOM on Colab (15GB VRAM)
-  hr_image_dir=r'datasets\custom_demo\rgb',
-  generator_lr = training_config.generator_lr,
-  discriminator_lr = training_config.discriminator_lr,
-)
-
+# ============================================================================
+# Device
+# ============================================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ============================================================================
-# Local Configuration Override
+# Backward Compatibility Aliases
 # ============================================================================
-local_config_path = os.path.join(os.path.dirname(__file__), 'local_config.py')
-
-if os.path.exists(local_config_path):
-    print(f"Loading local configuration from {local_config_path}...")
-    with open(local_config_path) as f:
-        # Execute the file's content inside the current namespace
-        exec(f.read())
+format_config = SimpleNamespace(
+    ultra_low_resolution = model_config.ultra_low_resolution,
+    low_resolution = model_config.low_resolution,
+    high_resolution = model_config.high_resolution,
+    img_channels = model_config.img_channels,
+)

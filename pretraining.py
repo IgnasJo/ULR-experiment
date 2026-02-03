@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from config import pretraining_config, get_checkpoint_path
+from config import pretraining_config
+from paths import get_checkpoint_path
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import create_pretrain_loader
 from training.feature_extractor import VGG19FeatureExtractor  # standard VGG perceptual

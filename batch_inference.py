@@ -1,6 +1,7 @@
 from inference import infer_and_save, load_models
 import os
-from config import evaluation_config, get_checkpoint_path
+from config import evaluation_config, checkpoint_config
+from paths import get_checkpoint_path
 
 
 def batch_inference(test_folder, output_folder, checkpoint_path):
@@ -51,5 +52,5 @@ if __name__ == "__main__":
     batch_inference(
         evaluation_config.test_dir,
         "batch_inference_output",
-        get_checkpoint_path(evaluation_config.checkpoint_path),
+        get_checkpoint_path(checkpoint_config.joint_filename),
     )

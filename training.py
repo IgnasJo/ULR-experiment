@@ -14,7 +14,8 @@ from utils2.loss import SegmentationLosses
 from utils2.lr_scheduler import LR_Scheduler
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import create_train_loader
-from config import training_config, format_config, get_checkpoint_path, get_checkpoint_name
+from config import training_config, format_config, model_config
+from paths import get_checkpoint_path, get_checkpoint_name
 
 def apply_spectral_norm(module):
     """Recursively applies spectral normalization to Conv2d and Linear layers."""
@@ -223,7 +224,7 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     # as per Eq (10): z = concat(I, S)
     # Calculate input channels: 3 (RGB) + num_classes (Mask Channels)
     # Example: 3 + 14 = 17 channels
-    disc_in_channels = 3 + training_config.num_classes
+    disc_in_channels = 3 + model_config.num_classes
     
     discriminator = Discriminator(in_channels=disc_in_channels, disc_config=disc_config).to(device)
 
@@ -233,7 +234,7 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
         discriminator = load_pretrained_discriminator_weights(
             discriminator, 
             pretrained_discriminator_path, 
-            training_config.num_classes, 
+            model_config.num_classes, 
             device
         )
 
@@ -245,7 +246,7 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     feature_extractor = RADIOFeatureExtractor().to(device)
     
     # D. Segmentation Model
-    segmentor = DeepLab(num_classes=training_config.num_classes,
+    segmentor = DeepLab(num_classes=model_config.num_classes,
                         backbone='resnet',
                         output_stride=16,
                         sync_bn=False,
@@ -336,7 +337,7 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             
             # 3. Prepare Joint Inputs for Discriminator (Eq 10)
             # z_real = concat(I_gt, S_gt_onehot)
-            masks_onehot = to_one_hot(masks_gt, training_config.num_classes)
+            masks_onehot = to_one_hot(masks_gt, model_config.num_classes)
             z_real = torch.cat([real_img, masks_onehot], dim=1)
             
             # z_fake = concat(I_sr, S_pred_probs)

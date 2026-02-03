@@ -4,7 +4,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 import numpy as np
-from config import format_config, training_config
+from config import format_config, model_config
 from esrgan import Generator
 from modeling.deeplab import DeepLab
 from utils2.metrics import Evaluator
@@ -77,7 +77,7 @@ def strip_module_state_dict(sd):
 
 def load_models(checkpoint_path):
     gen = Generator(format_config.img_channels).to(device)
-    seg = DeepLab(num_classes=training_config.num_classes, backbone='resnet', output_stride=16,
+    seg = DeepLab(num_classes=model_config.num_classes, backbone='resnet', output_stride=16,
                   sync_bn=None, freeze_bn=False).to(device)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     gen.load_state_dict(strip_module_state_dict(ckpt['gen_state_dict']))
