@@ -5,7 +5,6 @@ Uses the same dataset/dataloader pattern for reproducibility.
 import torch
 import os
 import numpy as np
-import pickle
 from PIL import Image
 from tqdm import tqdm
 from torchvision import transforms
@@ -55,33 +54,16 @@ def save_outputs(sr_tensor, seg_pred, filename, output_folder):
     Image.fromarray(seg_np).save(os.path.join(output_folder, f"seg_{filename}"))
 
 
-def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_path, gt_folder):
+def evaluate(test_folder, output_folder, checkpoint_path, gt_folder):
     """
     Evaluate model using DataLoader approach (consistent with training/pretraining).
     """
     # 1. Setup
     os.makedirs(output_folder, exist_ok=True)
     
-    # 2. Initialize or Resume State
-    processed_count = 0
+    # 2. Initialize State (always fresh)
     evaluator = Evaluator(num_class=model_config.num_classes)
-
-    if os.path.exists(evaluation_checkpoint_path):
-        print(f"Found checkpoint! Resuming from {evaluation_checkpoint_path}...")
-        try:
-            with open(evaluation_checkpoint_path, 'rb') as f:
-                checkpoint_data = pickle.load(f)
-                evaluator = checkpoint_data['evaluator']
-                processed_count = checkpoint_data.get('processed_count', 0)
-
-            print(f"   > Resuming with {processed_count} images already processed.")
-        except Exception as e:
-            print(f"   [ERROR] Could not load checkpoint: {e}")
-            print("   > Starting fresh instead.")
-            evaluator = Evaluator(num_class=model_config.num_classes)
-            processed_count = 0
-    else:
-        print("Starting fresh evaluation...")
+    print("Starting fresh evaluation...")
 
     # 3. Load Models
     print(f"   > Loading models from {checkpoint_path}...")
@@ -101,10 +83,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
     tbar = tqdm(enumerate(eval_loader), total=len(eval_loader), desc="Evaluating")
     
     for i, (lr_img, gt_mask, filenames) in tbar:
-        # Skip already processed (for resume)
-        if i < processed_count:
-            continue
-        
         filename = filenames[0]  # batch_size=1
         
         # Move to device
@@ -131,15 +109,6 @@ def evaluate(test_folder, output_folder, checkpoint_path, evaluation_checkpoint_
         current_miou = evaluator.Mean_Intersection_over_Union()
         current_pa = evaluator.Pixel_Accuracy()
         tbar.set_postfix(mIoU=f"{current_miou:.4f}", PA=f"{current_pa:.4f}")
-        
-        # Save checkpoint after each batch
-        processed_count = i + 1
-        checkpoint_data = {
-            'evaluator': evaluator,
-            'processed_count': processed_count
-        }
-        with open(evaluation_checkpoint_path, 'wb') as f:
-            pickle.dump(checkpoint_data, f)
 
     # 6. Final Metrics
     print("\n" + "=" * 30)
@@ -184,6 +153,5 @@ if __name__ == "__main__":
         evaluation_config.test_dir,
         evaluation_config.evaluation_dir,
         get_checkpoint_path(evaluation_config.checkpoint_path),
-        get_checkpoint_path("evaluation_checkpoint.pkl"),
         evaluation_config.test_dir_gt,
     )

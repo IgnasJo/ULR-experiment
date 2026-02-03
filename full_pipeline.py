@@ -48,7 +48,6 @@ def run_evaluation(checkpoint_path=None, output_dir=None):
     
     ckpt = checkpoint_path or get_checkpoint_path(checkpoint_config.joint_filename)
     out_dir = output_dir or evaluation_config.output_dir
-    eval_ckpt = get_checkpoint_path(checkpoint_config.eval_checkpoint_filename)
     
     print(f"Checkpoint: {ckpt}")
     print(f"Output dir: {out_dir}")
@@ -57,7 +56,6 @@ def run_evaluation(checkpoint_path=None, output_dir=None):
         evaluation_config.test_dir,
         out_dir,
         ckpt,
-        eval_ckpt,
         evaluation_config.test_dir_gt,
     )
     
