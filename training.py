@@ -270,7 +270,7 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             isdetach=True,
             max_N_ratio=1/100,
             ignore_label=255,
-            label_smoothing=0.0,     # IMPORTANT: disable smoothing for stability
+            label_smoothing=0.2,     # Paper recommends ~0.2 for conflict suppression
             max_clip_dist=20.0
         ).to(device)
 
