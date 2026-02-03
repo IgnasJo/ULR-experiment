@@ -14,7 +14,8 @@ def create_train_test_split(
     test_rgb: str,
     test_label: str,
     train_ratio: float = 0.8,
-    seed: int = 42
+    seed: int = 42,
+    max_samples: int = None
 ) -> Tuple[List[str], List[str]]:
     """
     Create train/test split from source dataset.
@@ -28,6 +29,7 @@ def create_train_test_split(
         test_label: Destination path for test labels
         train_ratio: Ratio of data to use for training (default 0.8)
         seed: Random seed for reproducibility (default 42)
+        max_samples: Maximum number of samples to use (default None, uses all)
     
     Returns:
         Tuple of (train_files, test_files) lists
@@ -44,6 +46,10 @@ def create_train_test_split(
     
     random.seed(seed)
     random.shuffle(image_files)
+    
+    # Limit samples if specified
+    if max_samples is not None and max_samples > 0:
+        image_files = image_files[:max_samples]
     
     # Split
     split_idx = int(len(image_files) * train_ratio)
