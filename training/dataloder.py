@@ -49,40 +49,55 @@ mask_transform = transforms.Compose([
 ])
 
 
-# Instantiate the Dataset
-train_dataset = SegmentationDataset(
-    image_dir=training_config.image_dir,
-    mask_dir=training_config.mask_dir,
-    transform=train_transform,
-    mask_transform=mask_transform,
-    compute_distance_maps=training_config.use_abl_loss  # Only compute distance maps if ABL is enabled
-)
+def create_train_loader():
+    """
+    Create training DataLoader for joint SR + segmentation training.
+    Call this function only when training (not in eval-only mode).
+    
+    Returns:
+        DataLoader for training
+    """
+    train_dataset = SegmentationDataset(
+        image_dir=training_config.image_dir,
+        mask_dir=training_config.mask_dir,
+        transform=train_transform,
+        mask_transform=mask_transform,
+        compute_distance_maps=training_config.use_abl_loss  # Only compute distance maps if ABL is enabled
+    )
 
-# Instantiate the DataLoader
-train_loader = DataLoader(
-    dataset=train_dataset,
-    batch_size=training_config.batch_size,         # Number of samples per batch (Decrease if you hit OOM on GPU)
-    shuffle=True,         # Shuffle data every epoch (Important for training)
-    num_workers=1,        # Number of CPU subprocesses to load data in parallel
-    pin_memory=False,      # Speeds up transfer to GPU (set True if using CUDA)
-    drop_last=True        # Drop the last incomplete batch (optional, helps with batchnorm)
-)
+    train_loader = DataLoader(
+        dataset=train_dataset,
+        batch_size=training_config.batch_size,         # Number of samples per batch (Decrease if you hit OOM on GPU)
+        shuffle=True,         # Shuffle data every epoch (Important for training)
+        num_workers=1,        # Number of CPU subprocesses to load data in parallel
+        pin_memory=False,      # Speeds up transfer to GPU (set True if using CUDA)
+        drop_last=True        # Drop the last incomplete batch (optional, helps with batchnorm)
+    )
+    return train_loader
 
-# 3. Initialize Dataset
-pretrain_dataset = SRPretrainDataset(
-    hr_image_dir=pretraining_config.hr_image_dir,
-    hr_transform=train_transform,
-    degradation_transform=degradation_transform
-)
 
-# 4. DataLoader
-pretrain_loader = DataLoader(
-    pretrain_dataset, 
-    batch_size=pretraining_config.batch_size, 
-    shuffle=True, 
-    num_workers=2,  # Reduced from 4 - Colab recommends max 2 workers
-    pin_memory=True
-)
+def create_pretrain_loader():
+    """
+    Create pretraining DataLoader for SR pretraining phase.
+    Call this function only when pretraining (not in eval-only mode).
+    
+    Returns:
+        DataLoader for pretraining
+    """
+    pretrain_dataset = SRPretrainDataset(
+        hr_image_dir=pretraining_config.hr_image_dir,
+        hr_transform=train_transform,
+        degradation_transform=degradation_transform
+    )
+
+    pretrain_loader = DataLoader(
+        pretrain_dataset, 
+        batch_size=pretraining_config.batch_size, 
+        shuffle=True, 
+        num_workers=2,  # Reduced from 4 - Colab recommends max 2 workers
+        pin_memory=True
+    )
+    return pretrain_loader
 
 
 def create_eval_loader(test_dir, gt_dir, batch_size=1):

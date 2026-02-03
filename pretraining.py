@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from config import pretraining_config, get_checkpoint_path
 from esrgan import Generator, Discriminator, disc_config
-from training.dataloder import pretrain_loader
+from training.dataloder import create_pretrain_loader
 from training.feature_extractor import VGG19FeatureExtractor  # standard VGG perceptual
 
 
@@ -67,6 +67,9 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
     # =========================
     # Training Loop
     # =========================
+
+    # Create DataLoader (created here to avoid import-time path validation)
+    pretrain_loader = create_pretrain_loader()
 
     for epoch in range(pretraining_config.num_epochs):
         generator.train()

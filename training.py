@@ -13,7 +13,7 @@ from modeling.deeplab import DeepLab
 from utils2.loss import SegmentationLosses
 from utils2.lr_scheduler import LR_Scheduler
 from esrgan import Generator, Discriminator, disc_config
-from training.dataloder import train_loader 
+from training.dataloder import create_train_loader
 from config import training_config, format_config, get_checkpoint_path, get_checkpoint_name
 
 def apply_spectral_norm(module):
@@ -276,13 +276,16 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     criterion_gan = nn.BCEWithLogitsLoss() # Eq (7, 8)
     criterion_ce = SegmentationLosses(weight=None, cuda=torch.cuda.is_available()).build_loss(mode='ce') # Eq (3)
 
-    # 4. Scheduler
+    # 4. DataLoader (created here to avoid import-time path validation)
+    train_loader = create_train_loader()
+
+    # 5. Scheduler
     scheduler = LR_Scheduler(mode=training_config.lr_scheduler, 
                              base_lr=training_config.segmentor_lr, 
                              num_epochs=training_config.num_epochs, 
                              iters_per_epoch=len(train_loader))
 
-    # 5. Training Loop
+    # 6. Training Loop
     best_pred = 0.0
 
     def freeze_bn_layers(model):
