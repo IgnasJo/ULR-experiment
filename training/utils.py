@@ -3,20 +3,26 @@
 import os
 import shutil
 import random
-from typing import Tuple, List
+import re
+
+
+def extract_number(filename):
+    """Extract the last integer value from filename for matching."""
+    matches = re.findall(r'\d+', filename)
+    return int(matches[-1]) if matches else 0
 
 
 def create_train_test_split(
-    source_rgb: str,
-    source_label: str,
-    train_rgb: str,
-    train_label: str,
-    test_rgb: str,
-    test_label: str,
-    train_ratio: float = 0.8,
-    seed: int = 42,
-    max_samples: int = None
-) -> Tuple[List[str], List[str]]:
+    source_rgb,
+    source_label,
+    train_rgb,
+    train_label,
+    test_rgb,
+    test_label,
+    train_ratio=0.8,
+    seed=42,
+    max_samples=None
+):
     """
     Create train/test split from source dataset.
     
@@ -38,11 +44,42 @@ def create_train_test_split(
     for d in [train_rgb, train_label, test_rgb, test_label]:
         os.makedirs(d, exist_ok=True)
     
-    # Get all image files and shuffle
-    image_files = sorted([
+    # Get all image files and sort by numeric value
+    image_files = [
         f for f in os.listdir(source_rgb) 
         if f.endswith(('.png', '.jpg', '.jpeg'))
-    ])
+    ]
+    image_files.sort(key=extract_number)
+    
+    # Build label lookup dictionary once (maps number -> label filename)
+    print(f"Building label lookup from {source_label}...")
+    label_files = [
+        f for f in os.listdir(source_label)
+        if f.endswith(('.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG'))
+    ]
+    label_lookup = {}
+    for label_file in label_files:
+        number = extract_number(label_file)
+        label_lookup[number] = label_file
+    print(f"Found {len(label_lookup)} label files")
+    
+    # Helper function to find label file by matching numeric value
+    def find_label_file(image_filename):
+        image_number = extract_number(image_filename)
+        if image_number in label_lookup:
+            return os.path.join(source_label, label_lookup[image_number])
+        return None
+    
+    # Validate that all images have corresponding labels
+    print(f"Validating {len(image_files)} images...")
+    for f in image_files:
+        label_path = find_label_file(f)
+        if label_path is None:
+            image_number = extract_number(f)
+            raise FileNotFoundError(
+                f"Label file not found for image '{f}' (number: {image_number}). "
+                f"No label file with matching number found in {source_label}"
+            )
     
     random.seed(seed)
     random.shuffle(image_files)
@@ -63,17 +100,21 @@ def create_train_test_split(
     # Copy training files
     for f in train_files:
         shutil.copy(os.path.join(source_rgb, f), os.path.join(train_rgb, f))
-        label_name = os.path.splitext(f)[0] + '.png'
-        label_src = os.path.join(source_label, label_name)
-        if os.path.exists(label_src):
+        label_src = find_label_file(f)
+        if label_src:
+            # Keep original extension of label file
+            label_ext = os.path.splitext(label_src)[1]
+            label_name = os.path.splitext(f)[0] + label_ext
             shutil.copy(label_src, os.path.join(train_label, label_name))
     
     # Copy test files
     for f in test_files:
         shutil.copy(os.path.join(source_rgb, f), os.path.join(test_rgb, f))
-        label_name = os.path.splitext(f)[0] + '.png'
-        label_src = os.path.join(source_label, label_name)
-        if os.path.exists(label_src):
+        label_src = find_label_file(f)
+        if label_src:
+            # Keep original extension of label file
+            label_ext = os.path.splitext(label_src)[1]
+            label_name = os.path.splitext(f)[0] + label_ext
             shutil.copy(label_src, os.path.join(test_label, label_name))
     
     print("Data split complete!")
