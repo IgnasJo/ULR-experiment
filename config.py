@@ -124,6 +124,15 @@ evaluation_config = SimpleNamespace(
 
 
 # ============================================================================
+# Batch Inference Configuration
+# ============================================================================
+batch_inference_config = SimpleNamespace(
+    rgb_dir = _env('ULR_BATCH_INFERENCE_RGB', None),
+    label_dir = _env('ULR_BATCH_INFERENCE_LABEL', None),
+)
+
+
+# ============================================================================
 # Device
 # ============================================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

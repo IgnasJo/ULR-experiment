@@ -77,8 +77,11 @@ def run_batch_inference(checkpoint_path=None, test_dir=None, output_dir=None):
     print("BATCH INFERENCE")
     print("="*60)
     
+    from config import batch_inference_config
+    
     ckpt = checkpoint_path or get_checkpoint_path(checkpoint_config.joint_filename)
-    test = test_dir or evaluation_config.test_dir
+    # Use batch_inference_config.rgb_dir if set, otherwise fall back to test_dir
+    test = test_dir or batch_inference_config.rgb_dir or evaluation_config.test_dir
     out_dir = output_dir or "batch_inference_output"
     
     print(f"Checkpoint: {ckpt}")
