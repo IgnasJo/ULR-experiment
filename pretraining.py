@@ -171,6 +171,8 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
 
     # Save final pretrained weights
     final_gen_path = get_checkpoint_path(save_path)
+    if os.path.exists(final_gen_path):
+        print(f"[WARNING] Overwriting existing file: {final_gen_path}")
     torch.save(generator.state_dict(), final_gen_path)
     print(f"[SR PRETRAIN] Generator saved to: {final_gen_path}")
     
@@ -178,6 +180,8 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
     # Note: Phase 2 discriminator has different input channels (3+N),
     # but the loading function handles the channel mismatch automatically
     final_disc_path = get_checkpoint_path(save_disc_path)
+    if os.path.exists(final_disc_path):
+        print(f"[WARNING] Overwriting existing file: {final_disc_path}")
     torch.save(discriminator.state_dict(), final_disc_path)
     print(f"[SR PRETRAIN] Discriminator saved to: {final_disc_path}")
     

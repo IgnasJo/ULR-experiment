@@ -485,6 +485,8 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     }
     final_name = get_checkpoint_name('joint', is_final=True)
     final_path = get_checkpoint_path(final_name)
+    if os.path.exists(final_path):
+        print(f"[WARNING] Overwriting existing checkpoint: {final_path}")
     torch.save(final_checkpoint, final_path)
     print(f"[Joint] Training complete. Final checkpoint saved to: {final_path}")
 
