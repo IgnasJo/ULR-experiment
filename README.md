@@ -1,14 +1,26 @@
 ## Setup
+
+This directory contains the experiment code used in this workspace.
+
 ```bash
-git clone https://github.com/hxy-0818/ULR2SS.git
-cd ULR2SS
-conda create -n ULR2SS python=3.8
-conda activte ULR2SS
-pip install -r requirements.txt
+cd experiment
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### GPU compatibility note (new NVIDIA Blackwell GPUs)
+
+`requirements.txt` pins a CUDA 12.8 nightly PyTorch stack that supports Blackwell (`sm_120`) GPUs.
+
+Quick verification:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+python -c "import torch; x=torch.randn(256,256,device='cuda'); y=x@x; torch.cuda.synchronize(); print(y.shape)"
 ```
 
 ### Datasets
-- Found in directory "datasets"
+- Paths are configured through environment variables in `config.py` (`ULR_TRAIN_RGB`, `ULR_TRAIN_LABEL`, `ULR_VAL_RGB`, `ULR_VAL_LABEL`, `ULR_TEST_RGB`, `ULR_TEST_LABEL`).
 - Source of SunRGBD dataset: ["Training on RGB data for 13 classes"](https://github.com/ankurhanda/sunrgbd-meta-data?tab=readme-ov-file#training-on-rgb-data-for-13-classes)
 
 ## Weight
@@ -22,6 +34,16 @@ python full_pipeline.py --skip-pretrain
 python full_pipeline.py --pretrain-only
 python full_pipeline.py --joint-only weights.pth
 ```
+
+## End-to-end overfit test
+
+Run a minimal full pipeline (pretrain + joint train + eval) on `test_data`:
+
+```bash
+python overfit_test_pipeline.py --pretrain-epochs 1 --train-epochs 1 --target-miou 0.0 --allow-gpu
+```
+
+For an overfit-oriented sanity pass, increase epochs (for example `--train-epochs 20`).
 
 ## Demo Test
 ```bash

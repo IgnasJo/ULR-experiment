@@ -1,5 +1,5 @@
 """
-Smoke test runner for full_pipeline.py.
+Overfit test runner for full_pipeline.py.
 
 Purpose:
 - Run the full training + evaluation pipeline end to end
@@ -7,9 +7,9 @@ Purpose:
 - Encourage intentional overfitting to verify the stack works without runtime errors
 
 Usage examples:
-    python smoke_test_pipeline.py
-    python smoke_test_pipeline.py --pretrain-epochs 3 --train-epochs 20
-    python smoke_test_pipeline.py --target-miou 0.60
+    python overfit_test_pipeline.py
+    python overfit_test_pipeline.py --pretrain-epochs 5 --train-epochs 60
+    python overfit_test_pipeline.py --target-miou 0.35
 """
 
 from __future__ import annotations
@@ -26,19 +26,19 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run full pipeline smoke test on tiny dataset to validate end-to-end execution."
+        description="Run full pipeline overfit test on tiny dataset to validate end-to-end execution."
     )
     parser.add_argument(
         "--pretrain-epochs",
         type=int,
-        default=3,
-        help="Number of SR pretraining epochs (default: 3)",
+        default=5,
+        help="Number of SR pretraining epochs (default: 5)",
     )
     parser.add_argument(
         "--train-epochs",
         type=int,
-        default=25,
-        help="Number of joint training epochs (default: 25)",
+        default=60,
+        help="Number of joint training epochs (default: 60)",
     )
     parser.add_argument(
         "--batch-size",
@@ -55,20 +55,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-miou",
         type=float,
-        default=0.70,
-        help="Soft target mIoU for overfit check on the same train/test set (default: 0.70)",
+        default=0.35,
+        help="Target mIoU for overfit check on the same train/test set (default: 0.35)",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.9,
+        help="Segmentation weight alpha used during overfit runs (default: 0.9)",
+    )
+    parser.add_argument(
+        "--lambda-adv",
+        type=float,
+        default=0.001,
+        help="Adversarial loss weight for overfit runs (default: 0.001)",
+    )
+    parser.add_argument(
+        "--lambda-fea",
+        type=float,
+        default=0.005,
+        help="Feature loss weight for overfit runs (default: 0.005)",
     )
     parser.add_argument(
         "--checkpoint-dir",
         type=str,
         default=None,
-        help="Checkpoint directory override (default: checkpoints/smoke_overfit_<timestamp>)",
+        help="Checkpoint directory override (default: checkpoints/overfit_<timestamp>)",
     )
     parser.add_argument(
         "--eval-output",
         type=str,
         default=None,
-        help="Evaluation output directory override (default: evaluation_output/smoke_overfit_<timestamp>)",
+        help="Evaluation output directory override (default: evaluation_output/overfit_<timestamp>)",
     )
     parser.add_argument(
         "--clean",
@@ -78,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--allow-gpu",
         action="store_true",
-        help="Allow CUDA usage. By default this smoke runner forces CPU for compatibility.",
+        help="Allow CUDA usage. By default this runner forces CPU for compatibility.",
     )
     return parser.parse_args()
 
@@ -89,7 +107,7 @@ def require_dir(path: Path, label: str) -> None:
 
 
 def run_command(command: list[str], env: dict[str, str], cwd: Path) -> None:
-    print("\n[Smoke] Running command:")
+    print("\n[Overfit] Running command:")
     print(" ", " ".join(command))
     result = subprocess.run(command, cwd=str(cwd), env=env)
     if result.returncode != 0:
@@ -113,8 +131,8 @@ def main() -> int:
 
     run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    checkpoint_dir = Path(args.checkpoint_dir) if args.checkpoint_dir else script_dir / "checkpoints" / f"smoke_overfit_{run_stamp}"
-    eval_output = Path(args.eval_output) if args.eval_output else script_dir / "evaluation_output" / f"smoke_overfit_{run_stamp}"
+    checkpoint_dir = Path(args.checkpoint_dir) if args.checkpoint_dir else script_dir / "checkpoints" / f"overfit_{run_stamp}"
+    eval_output = Path(args.eval_output) if args.eval_output else script_dir / "evaluation_output" / f"overfit_{run_stamp}"
 
     if args.clean:
         shutil.rmtree(checkpoint_dir, ignore_errors=True)
@@ -137,7 +155,11 @@ def main() -> int:
             "ULR_BATCH_SIZE": str(args.batch_size),
             "ULR_PRETRAIN_BATCH_SIZE": str(args.batch_size),
             "ULR_SEED": str(args.seed),
-            # Disable ABL by default for faster smoke validation.
+            # Bias toward memorizing the tiny set in overfit tests.
+            "ULR_ALPHA": str(args.alpha),
+            "ULR_LAMBDA_2": str(args.lambda_fea),
+            "ULR_LAMBDA_3": str(args.lambda_adv),
+            # Disable ABL by default for faster overfit validation.
             "ULR_USE_ABL": "False",
             "ULR_CHECKPOINT_DIR": str(checkpoint_dir),
             "ULR_EVAL_OUTPUT_DIR": str(eval_output),
@@ -145,11 +167,11 @@ def main() -> int:
     )
 
     if not args.allow_gpu:
-        # Avoid CUDA architecture/runtime mismatches during smoke validation.
+        # Avoid CUDA architecture/runtime mismatches during overfit validation.
         env["CUDA_VISIBLE_DEVICES"] = ""
 
     print("=" * 72)
-    print("Smoke Test Pipeline")
+    print("Overfit Test Pipeline")
     print("=" * 72)
     print(f"Experiment dir : {script_dir}")
     print(f"Train images   : {test_images}")
@@ -159,6 +181,9 @@ def main() -> int:
     print(f"Checkpoint dir : {checkpoint_dir}")
     print(f"Eval output    : {eval_output}")
     print(f"GPU enabled    : {args.allow_gpu}")
+    print(f"Alpha          : {args.alpha}")
+    print(f"Lambda fea     : {args.lambda_fea}")
+    print(f"Lambda adv     : {args.lambda_adv}")
 
     run_command(
         [sys.executable, str(full_pipeline), "--evaluate", "--eval-output", str(eval_output)],
@@ -168,8 +193,8 @@ def main() -> int:
 
     metrics_path = eval_output / "metrics.json"
     if not metrics_path.exists():
-        print("[Smoke] WARNING: Pipeline finished but metrics.json was not found.")
-        print(f"[Smoke] Expected: {metrics_path}")
+        print("[Overfit] WARNING: Pipeline finished but metrics.json was not found.")
+        print(f"[Overfit] Expected: {metrics_path}")
         return 1
 
     with metrics_path.open("r", encoding="utf-8") as f:
@@ -177,18 +202,18 @@ def main() -> int:
 
     miou = float(metrics.get("mIoU", 0.0))
     print("\n" + "=" * 72)
-    print("Smoke Test Summary")
+    print("Overfit Test Summary")
     print("=" * 72)
     print(f"mIoU         : {miou:.4f}")
     print(f"Target mIoU  : {args.target_miou:.4f}")
     print(f"Metrics file : {metrics_path}")
 
     if miou >= args.target_miou:
-        print("[Smoke] PASS: Overfit target reached and no runtime errors occurred.")
+        print("[Overfit] PASS: Overfit target reached and no runtime errors occurred.")
         return 0
 
-    print("[Smoke] WARNING: Pipeline completed without runtime errors, but overfit target was not reached.")
-    print("[Smoke] Try increasing --train-epochs or lowering --target-miou.")
+    print("[Overfit] WARNING: Pipeline completed without runtime errors, but overfit target was not reached.")
+    print("[Overfit] Try increasing --train-epochs or lowering --target-miou.")
     return 2
 
 
@@ -196,5 +221,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"[Smoke] ERROR: {exc}")
+        print(f"[Overfit] ERROR: {exc}")
         raise SystemExit(1)

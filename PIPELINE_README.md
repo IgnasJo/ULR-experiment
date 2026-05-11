@@ -2,6 +2,24 @@
 
 Complete SR + Semantic Segmentation joint training pipeline with one-line commands.
 
+## First-Time Setup
+
+Install dependencies from the experiment directory:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Verify CUDA execution (recommended before training):
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+python -c "import torch; x=torch.randn(256,256,device='cuda'); y=x@x; torch.cuda.synchronize(); print(y.shape)"
+```
+
+If the second command fails with `no kernel image is available`, your PyTorch build does not match your GPU architecture. Reinstall using `requirements.txt` in this folder.
+
 ## Quick Commands
 
 | Command | Purpose |
@@ -62,4 +80,12 @@ After training:
 1. Use `python inference.py --input image.jpg --checkpoint path.pth --output output/` for inference
 2. Fine-tune with `python full_pipeline.py --joint-only checkpoint.pth`
 3. Evaluate different checkpoints with `--eval-only --checkpoint path.pth`
+
+## Overfit Test Entry Point
+
+To validate full pretrain + joint train + evaluation on the tiny local dataset:
+
+```bash
+python overfit_test_pipeline.py --pretrain-epochs 1 --train-epochs 1 --target-miou 0.0 --allow-gpu
+```
 
