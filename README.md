@@ -37,7 +37,7 @@ python full_pipeline.py --joint-only weights.pth
 
 ## End-to-end overfit test
 
-Run a minimal full pipeline (pretrain + joint train + eval) on `test_data`:
+Run a minimal full pipeline (pretrain + joint train + eval) on `ULR_overfit_data`:
 
 ```bash
 python overfit_test_pipeline.py --pretrain-epochs 1 --train-epochs 1 --target-miou 0.0 --allow-gpu

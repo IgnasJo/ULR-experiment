@@ -3,7 +3,7 @@ Overfit test runner for full_pipeline.py.
 
 Purpose:
 - Run the full training + evaluation pipeline end to end
-- Use a tiny local dataset (experiment/test_data) for train/val/test
+- Use a tiny local dataset (experiment/ULR_overfit_data) for train/val/test
 - Encourage intentional overfitting to verify the stack works without runtime errors
 
 Usage examples:
@@ -121,8 +121,8 @@ def main() -> int:
     full_pipeline = script_dir / "full_pipeline.py"
 
     # Reuse the same tiny split for train/val/test to intentionally make overfitting easy.
-    test_images = script_dir / "test_data" / "test_images"
-    test_labels = script_dir / "test_data" / "test_labels"
+    test_images = script_dir / "ULR_overfit_data" / "test_images"
+    test_labels = script_dir / "ULR_overfit_data" / "test_labels"
     require_dir(script_dir, "Experiment root")
     require_dir(test_images, "Test images")
     require_dir(test_labels, "Test labels")
