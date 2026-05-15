@@ -72,7 +72,9 @@ def strip_module_state_dict(sd):
     from collections import OrderedDict
     new_sd = OrderedDict()
     for k, v in sd.items():
-        new_sd[k.replace('module.', '')] = v
+        # Strip 'module.' (DataParallel) and '_orig_mod.' (torch.compile) prefixes
+        k = k.replace('_orig_mod.', '').replace('module.', '')
+        new_sd[k] = v
     return new_sd
 
 def load_models(checkpoint_path):

@@ -56,6 +56,8 @@ class Evaluator(object):
         self.confusion_matrix = np.zeros((self.num_class,) * 2)
         self.boundary_predictions = []
         self.boundary_ground_truths = []
+        self._gt_images = []
+        self._pred_images = []
 
     def _ensure_boundary_attrs(self):
         """Ensure boundary attributes exist (for backward compatibility with old checkpoints)."""
@@ -82,19 +84,6 @@ class Evaluator(object):
     def _get_boundary_points(self, boundary_mask):
         """Get coordinates of boundary pixels as (N, 2) array."""
         return np.array(np.where(boundary_mask)).T
-
-    def add_batch_with_boundaries(self, gt_image, pre_image):
-        """
-        Add batch and store boundary information for boundary metrics.
-        Use this instead of add_batch when boundary metrics are needed.
-        """
-        self._ensure_boundary_attrs()
-        self.add_batch(gt_image, pre_image)
-        # Store boundaries for later computation
-        gt_boundary = self._extract_boundaries(gt_image)
-        pre_boundary = self._extract_boundaries(pre_image)
-        self.boundary_predictions.append(pre_boundary)
-        self.boundary_ground_truths.append(gt_boundary)
 
     def Boundary_F1(self, tau=2):
         """
@@ -376,6 +365,89 @@ class Evaluator(object):
         
         return np.mean(hd_values)
 
+    def Adjusted_Rand_Index(self):
+        """
+        Compute Adjusted Rand Index (ARI) between predicted and GT segmentations.
+
+        ARI measures the similarity between two clusterings adjusted for chance.
+        Ranges from -1 (worst) to 1 (perfect match), with 0 indicating random.
+        Reported in Table 4 of the ULR2SS paper.
+
+        Returns:
+            Mean ARI across accumulated samples, or 0.0 if no samples.
+        """
+        self._ensure_boundary_attrs()
+        if not hasattr(self, '_gt_images') or not self._gt_images:
+            return 0.0
+        from sklearn.metrics import adjusted_rand_score
+        ari_values = []
+        for gt, pred in zip(self._gt_images, self._pred_images):
+            ari_values.append(adjusted_rand_score(gt.ravel(), pred.ravel()))
+        return float(np.mean(ari_values)) if ari_values else 0.0
+
+    def Segmentation_Covering(self):
+        """
+        Compute Segmentation Covering between predicted and GT segmentations.
+
+        Covering(S' -> S) = (1/N) * sum_{R in S} |R| * max_{R' in S'} IoU(R, R')
+
+        Measures how well predicted segments cover ground truth segments.
+        Reported in Table 4 of the ULR2SS paper.
+
+        Returns:
+            Mean Covering score across accumulated samples, or 0.0 if no samples.
+        """
+        if not hasattr(self, '_gt_images') or not self._gt_images:
+            return 0.0
+        cov_values = []
+        for gt, pred in zip(self._gt_images, self._pred_images):
+            N = gt.size
+            if N == 0:
+                continue
+            gt_labels = np.unique(gt)
+            weighted_iou_sum = 0.0
+            for gt_label in gt_labels:
+                gt_mask = (gt == gt_label)
+                gt_size = gt_mask.sum()
+                if gt_size == 0:
+                    continue
+                # Find the best IoU with any predicted segment
+                pred_labels = np.unique(pred[gt_mask])
+                best_iou = 0.0
+                for pred_label in pred_labels:
+                    pred_mask = (pred == pred_label)
+                    intersection = np.logical_and(gt_mask, pred_mask).sum()
+                    union = np.logical_or(gt_mask, pred_mask).sum()
+                    if union > 0:
+                        best_iou = max(best_iou, intersection / union)
+                weighted_iou_sum += gt_size * best_iou
+            cov_values.append(weighted_iou_sum / N)
+        return float(np.mean(cov_values)) if cov_values else 0.0
+
+    def add_batch_with_boundaries(self, gt_image, pre_image):
+        """
+        Add batch and store boundary information for boundary metrics.
+        Use this instead of add_batch when boundary metrics are needed.
+        """
+        self._ensure_boundary_attrs()
+        self._ensure_image_storage()
+        self.add_batch(gt_image, pre_image)
+        # Store boundaries for later computation
+        gt_boundary = self._extract_boundaries(gt_image)
+        pre_boundary = self._extract_boundaries(pre_image)
+        self.boundary_predictions.append(pre_boundary)
+        self.boundary_ground_truths.append(gt_boundary)
+        # Store raw images for ARI / Covering
+        self._gt_images.append(gt_image.copy())
+        self._pred_images.append(pre_image.copy())
+
+    def _ensure_image_storage(self):
+        """Ensure image storage lists exist."""
+        if not hasattr(self, '_gt_images'):
+            self._gt_images = []
+        if not hasattr(self, '_pred_images'):
+            self._pred_images = []
+
     def get_all_metrics(self, tau=2, alpha=1.0):
         """
         Compute and return all available metrics as a dictionary.
@@ -392,6 +464,9 @@ class Evaluator(object):
             'Pixel_Accuracy_Class': self.Pixel_Accuracy_Class(),
             'mIoU': self.Mean_Intersection_over_Union(),
             'FWIoU': self.Frequency_Weighted_Intersection_over_Union(),
+            'mAcc': self.Pixel_Accuracy_Class(),
+            'ARI': self.Adjusted_Rand_Index(),
+            'Covering': self.Segmentation_Covering(),
             'Boundary_F1': self.Boundary_F1(tau=tau),
             'Symmetric_Boundary_Dice': self.Symmetric_Boundary_Dice(tau=tau),
             'Hausdorff_Distance': self.Hausdorff_Distance(),

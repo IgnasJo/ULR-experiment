@@ -3,7 +3,7 @@ import numpy as np
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from PIL import Image
-from config import format_config, training_config, pretraining_config
+from config import format_config, training_config, pretraining_config, perf_config
 
 from training.dataset import SegmentationDataset, SRPretrainDataset, EvaluationDataset
 
@@ -67,11 +67,13 @@ def create_train_loader():
 
     train_loader = DataLoader(
         dataset=train_dataset,
-        batch_size=training_config.batch_size,         # Number of samples per batch (Decrease if you hit OOM on GPU)
-        shuffle=True,         # Shuffle data every epoch (Important for training)
-        num_workers=1,        # Number of CPU subprocesses to load data in parallel
-        pin_memory=False,      # Speeds up transfer to GPU (set True if using CUDA)
-        drop_last=True        # Drop the last incomplete batch (optional, helps with batchnorm)
+        batch_size=training_config.batch_size,
+        shuffle=True,
+        num_workers=perf_config.num_workers,
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=perf_config.num_workers > 0,
+        prefetch_factor=2 if perf_config.num_workers > 0 else None,
+        drop_last=True
     )
     return train_loader
 
@@ -94,13 +96,15 @@ def create_pretrain_loader():
         pretrain_dataset, 
         batch_size=pretraining_config.batch_size, 
         shuffle=True, 
-        num_workers=2,  # Reduced from 4 - Colab recommends max 2 workers
-        pin_memory=True
+        num_workers=perf_config.num_workers,
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=perf_config.num_workers > 0,
+        prefetch_factor=2 if perf_config.num_workers > 0 else None,
     )
     return pretrain_loader
 
 
-def create_eval_loader(test_dir, gt_dir, batch_size=1):
+def create_eval_loader(test_dir, gt_dir, batch_size=1, include_hr=False):
     """
     Create evaluation DataLoader.
     
@@ -108,6 +112,8 @@ def create_eval_loader(test_dir, gt_dir, batch_size=1):
         test_dir: Path to test images
         gt_dir: Path to ground truth masks
         batch_size: Batch size (default 1 for evaluation)
+        include_hr: If True, also return HR ground truth tensors
+            (needed for SR quality metrics: PSNR, SSIM, LPIPS, FID)
         
     Returns:
         DataLoader for evaluation
@@ -116,15 +122,18 @@ def create_eval_loader(test_dir, gt_dir, batch_size=1):
         test_dir=test_dir,
         gt_dir=gt_dir,
         lr_transform=evaluate_transform,
-        mask_transform=mask_transform
+        mask_transform=mask_transform,
+        hr_transform=train_transform if include_hr else None
     )
     
     eval_loader = DataLoader(
         eval_dataset,
         batch_size=batch_size,
-        shuffle=False,  # Keep order for evaluation
-        num_workers=2,
-        pin_memory=True
+        shuffle=False,
+        num_workers=perf_config.num_workers,
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=perf_config.num_workers > 0,
+        prefetch_factor=2 if perf_config.num_workers > 0 else None,
     )
     
     return eval_loader

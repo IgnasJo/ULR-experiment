@@ -16,6 +16,8 @@ Usage:
     # Option 2: Environment variables (for subprocesses)
     export ULR_CHECKPOINT_DIR=/path/to/checkpoints
     export ULR_USE_ABL=True
+    export ULR_USE_AMP=True
+    export ULR_USE_COMPILE=True
 """
 
 import os
@@ -82,6 +84,12 @@ training_config = SimpleNamespace(
     # Active Boundary Loss
     use_abl_loss = _env('ULR_USE_ABL', False, bool),
     lambda_abl = _env('ULR_LAMBDA_ABL', 0.02, float),
+
+    # Speed / precision flags
+    # use_amp: enables bfloat16 mixed precision (significant speedup on Ampere+/Blackwell)
+    use_amp = _env('ULR_USE_AMP', False, bool),
+    # use_compile: enables torch.compile for generator and segmentor
+    use_compile = _env('ULR_USE_COMPILE', False, bool),
     
     # GAN Stability
     label_smoothing_real = _env('ULR_LABEL_SMOOTHING', 0.9, float),
@@ -90,6 +98,17 @@ training_config = SimpleNamespace(
     # Data paths (override per experiment)
     image_dir = _env('ULR_TRAIN_RGB', r'datasets\custom_demo\rgb'),
     mask_dir = _env('ULR_TRAIN_LABEL', r'datasets\custom_demo\label'),
+)
+
+
+# ============================================================================
+# Performance Configuration
+# ============================================================================
+perf_config = SimpleNamespace(
+    # DataLoader workers (set 0 to disable multiprocessing, e.g. for debugging)
+    num_workers = _env('ULR_NUM_WORKERS', 4, int),
+    # deterministic=True disables cudnn.benchmark for reproducible results
+    deterministic = _env('ULR_DETERMINISTIC', False, bool),
 )
 
 
@@ -136,6 +155,17 @@ batch_inference_config = SimpleNamespace(
 # Device
 # ============================================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ============================================================================
+# Global performance settings (applied once at import time)
+# ============================================================================
+# TF32: ~2-3x faster matmuls on Ampere+ GPUs with negligible precision loss
+torch.set_float32_matmul_precision('high')
+
+# cuDNN auto-tunes convolution algorithms for fixed input sizes (16→96→384)
+# Disable for fully reproducible runs via ULR_DETERMINISTIC=True
+torch.backends.cudnn.benchmark = not _env('ULR_DETERMINISTIC', False, bool)
+torch.backends.cudnn.deterministic = _env('ULR_DETERMINISTIC', False, bool)
 
 
 # ============================================================================

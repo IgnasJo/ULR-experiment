@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from config import pretraining_config
+from config import pretraining_config, training_config
 from paths import get_checkpoint_path
 from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import create_pretrain_loader
@@ -30,7 +30,11 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
         Tuple of (generator_path, discriminator_path)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    use_amp = training_config.use_amp and device.type == 'cuda'
+    amp_dtype = torch.bfloat16 if use_amp else torch.float32
+
     print(f"[SR PRETRAIN] Device: {device}")
+    print(f"[SR PRETRAIN] Mixed precision (AMP): {use_amp} (dtype={amp_dtype})")
     print(f"[SR PRETRAIN] Will save to: {save_path}")
 
     # =========================
@@ -50,13 +54,14 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
     # =========================
 
     opt_g = optim.Adam(
-        generator.parameters(), lr=pretraining_config.generator_lr, betas=(0.9, 0.999)
+        generator.parameters(), lr=pretraining_config.generator_lr, betas=(0.9, 0.999), foreach=True
     )
 
     opt_d = optim.Adam(
         discriminator.parameters(),
         lr=pretraining_config.discriminator_lr,
         betas=(0.9, 0.999),
+        foreach=True,
     )
 
     # =========================
@@ -80,78 +85,63 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
         tbar = tqdm(pretrain_loader, desc=f"SR Pretrain Epoch {epoch+1}")
 
         for lr_img, hr_img in tbar:
-            lr_img = lr_img.to(device)
-            hr_img = hr_img.to(device)
+            lr_img = lr_img.to(device, non_blocking=True)
+            hr_img = hr_img.to(device, non_blocking=True)
 
             # =====================================================
             # Train Discriminator
             # =====================================================
             opt_d.zero_grad()
 
-            with torch.no_grad():
-                fake_sr = generator(lr_img)
+            with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
+                with torch.no_grad():
+                    fake_sr = generator(lr_img)
+            fake_sr = fake_sr.float()
 
             pred_real = discriminator(hr_img)
             pred_fake = discriminator(fake_sr.detach())
 
             loss_d_real = criterion_gan(pred_real, torch.ones_like(pred_real))
             loss_d_fake = criterion_gan(pred_fake, torch.zeros_like(pred_fake))
-
             loss_d = loss_d_real + loss_d_fake
+
+            log_d = loss_d.item()
             loss_d.backward()
             opt_d.step()
-
-            # Store discriminator loss for logging before deletion
-            log_d = loss_d.item()
-
-            # Free memory before generator training
-            del pred_real, pred_fake, loss_d_real, loss_d_fake, loss_d, fake_sr
-            torch.cuda.empty_cache()
 
             # =====================================================
             # Train Generator
             # =====================================================
             opt_g.zero_grad()
 
-            fake_sr = generator(lr_img)
+            with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
+                fake_sr = generator(lr_img)
+            fake_sr = fake_sr.float()
 
             # 1. Pixel loss (MAE)
             loss_l1 = criterion_l1(fake_sr, hr_img)
 
             # 2. VGG perceptual loss
-            # Extract features
             fake_features = feature_extractor(fake_sr)
-
-            # We detach real_features because we don't want to backpropagate
-            # through the VGG model or the real image.
             real_features = feature_extractor(hr_img).detach()
-
-            # Calculate L1 distance between the feature maps
             loss_vgg = criterion_l1(fake_features, real_features)
 
             # 3. Adversarial loss
             pred_fake = discriminator(fake_sr)
             loss_gan = criterion_gan(pred_fake, torch.ones_like(pred_fake))
 
-            # Total Loss
             loss_g = (
                 loss_l1
                 + pretraining_config.vgg_weight * loss_vgg
                 + pretraining_config.gan_weight * loss_gan
             )
 
-            # Store values for logging before backward pass
             log_l1 = loss_l1.item()
             log_vgg = loss_vgg.item()
             log_gan = loss_gan.item()
 
             loss_g.backward()
             opt_g.step()
-
-            # Free memory after each batch
-            del fake_sr, fake_features, real_features, pred_fake
-            del loss_l1, loss_vgg, loss_gan, loss_g
-            torch.cuda.empty_cache()
 
             tbar.set_postfix(
                 {

@@ -134,20 +134,24 @@ class EvaluationDataset(Dataset):
     Dataset for evaluation that returns:
     - LR input tensor (degraded from HR)
     - GT mask tensor
+    - HR image tensor (for SR quality metrics: PSNR, SSIM, LPIPS, FID)
     - filename (for saving results)
     """
-    def __init__(self, test_dir, gt_dir, lr_transform, mask_transform):
+    def __init__(self, test_dir, gt_dir, lr_transform, mask_transform, hr_transform=None):
         """
         Args:
             test_dir (str): Path to test images (HR images to be degraded)
             gt_dir (str): Path to ground truth segmentation masks
             lr_transform (callable): Transform to create LR input from HR image
             mask_transform (callable): Transform for GT masks
+            hr_transform (callable, optional): Transform for HR ground truth
+                (CenterCrop + ToTensor). If None, HR tensor is not returned.
         """
         self.test_dir = test_dir
         self.gt_dir = gt_dir
         self.lr_transform = lr_transform
         self.mask_transform = mask_transform
+        self.hr_transform = hr_transform
         
         self.images = []
         self.masks = []
@@ -190,5 +194,11 @@ class EvaluationDataset(Dataset):
         # Load and transform mask
         mask = Image.open(mask_path).convert("L")
         mask_tensor = self.mask_transform(mask)
+        
+        # Optionally return HR ground truth for SR metrics
+        if self.hr_transform is not None:
+            hr_image = Image.open(img_path).convert("RGB")
+            hr_tensor = self.hr_transform(hr_image)
+            return lr_tensor, mask_tensor, hr_tensor, img_name
         
         return lr_tensor, mask_tensor, img_name
