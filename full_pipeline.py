@@ -158,6 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain-only", action="store_true", help="Only run pretraining")
     parser.add_argument("--pretrained-gen", type=str, default="pretrained_generator.pth", help="Path for pretrained generator weights")
     parser.add_argument("--pretrained-disc", type=str, default="pretrained_discriminator.pth", help="Path for pretrained discriminator weights")
+    parser.add_argument("--finetune", type=str, default=None, help="Fine-tune from a full joint checkpoint (gen+seg loaded in-memory)")
     parser.add_argument("--joint-only", type=str, default=None, help="Run only joint training with specified generator weights")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation after training")
     parser.add_argument("--eval-only", action="store_true", help="Run only evaluation (skip training)")
@@ -168,7 +169,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    if args.batch_inference:
+    if args.finetune:
+        train_joint(pretrained_checkpoint_path=args.finetune)
+    elif args.batch_inference:
         run_batch_inference(
             checkpoint_path=args.checkpoint,
             test_dir=args.test_dir,

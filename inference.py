@@ -61,7 +61,11 @@ def preprocess_image(image_path):
     if img.size == (format_config.high_resolution, format_config.high_resolution):
         img = img.resize((format_config.ultra_low_resolution, format_config.ultra_low_resolution), Image.BICUBIC)
         img = img.resize((format_config.low_resolution, format_config.low_resolution), Image.BICUBIC)
-    return transforms.ToTensor()(img).unsqueeze(0)
+    t = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ])
+    return t(img).unsqueeze(0)
 
 def postprocess_image(tensor):
     tensor = tensor.squeeze(0).cpu().detach()

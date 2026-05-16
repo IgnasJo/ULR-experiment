@@ -21,7 +21,8 @@ downsample_transform = transforms.Compose([
 evaluate_transform = transforms.Compose([
     transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
     downsample_transform,
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
 ])
 
 degradation_transform = transforms.Compose([
@@ -30,10 +31,12 @@ degradation_transform = transforms.Compose([
 ])
 
 # Define transformations
-# RGB Images: Resize -> Tensor -> Normalize
+# RGB Images: Crop -> Tensor -> Normalize to [-1, 1] (mean=0.5, std=0.5)
+# Matches the inference postprocess which denormalises via tensor * 0.5 + 0.5
 train_transform = transforms.Compose([
     transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
 ])
 
 def to_long_tensor(x):

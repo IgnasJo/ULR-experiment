@@ -16,6 +16,11 @@ from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import create_train_loader
 from config import training_config, format_config, model_config
 from paths import get_checkpoint_path, get_checkpoint_name
+def strip_module_state_dict(sd):
+    """Strip 'module.' (DataParallel) and '_orig_mod.' (torch.compile) prefixes from state dict keys."""
+    return {k.replace('_orig_mod.', '').replace('module.', ''): v for k, v in sd.items()}
+
+
 def apply_spectral_norm(module):
     """Recursively applies spectral normalization to Conv2d and Linear layers."""
     if isinstance(module, (nn.Conv2d, nn.Linear)):
@@ -191,16 +196,20 @@ def feature_loss_calc(f_real, f_fake):
     return l1 + l_cos
 
 
-def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=None):
+def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=None, pretrained_checkpoint_path=None):
     """
     Joint training of Generator and Segmentor.
     
     Args:
-        pretrained_generator_path: Path to pretrained generator weights (optional)
+        pretrained_generator_path: Path to pretrained generator weights (raw state dict, optional)
         pretrained_discriminator_path: Path to pretrained discriminator weights (optional)
             Note: Phase 1 discriminator has 3 input channels (RGB only).
             Phase 2 discriminator has 3 + num_classes channels (RGB + masks).
             The loading function handles this mismatch automatically.
+        pretrained_checkpoint_path: Path to a full joint checkpoint dict containing
+            'gen_state_dict' and 'seg_state_dict'. When set, both generator and
+            segmentor are initialised from the checkpoint (finetune mode).
+            Raises FileNotFoundError / ValueError / RuntimeError on any loading failure.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = training_config.use_amp and device.type == 'cuda'
@@ -211,13 +220,42 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     print(f"[Joint] Mixed precision (AMP): {use_amp} (dtype={amp_dtype})")
     print(f"[Joint] torch.compile: {use_compile}")
 
+    # Pre-load finetune checkpoint state dicts (in-memory) before model init
+    _finetune_gen_sd = None
+    _finetune_seg_sd = None
+    if pretrained_checkpoint_path:
+        if not os.path.exists(pretrained_checkpoint_path):
+            raise FileNotFoundError(f"[Finetune] Checkpoint not found: {pretrained_checkpoint_path}")
+        _ckpt = torch.load(pretrained_checkpoint_path, map_location=device, weights_only=False)
+        if not isinstance(_ckpt, dict) or 'gen_state_dict' not in _ckpt or 'seg_state_dict' not in _ckpt:
+            raise ValueError(
+                f"[Finetune] Invalid checkpoint format. Expected 'gen_state_dict' and 'seg_state_dict', "
+                f"got: {list(_ckpt.keys()) if isinstance(_ckpt, dict) else type(_ckpt)}"
+            )
+        print(f"[Joint] Finetuning from: {pretrained_checkpoint_path}")
+        if 'epoch' in _ckpt:
+            print(f"  Checkpoint epoch : {_ckpt['epoch']}")
+        if 'miou' in _ckpt:
+            print(f"  Checkpoint mIoU  : {_ckpt['miou']:.4f}")
+        _finetune_gen_sd = strip_module_state_dict(_ckpt['gen_state_dict'])
+        _finetune_seg_sd = strip_module_state_dict(_ckpt['seg_state_dict'])
+        # Discriminator is always re-initialised fresh when finetuning — pretrained checkpoints
+        # don't contain disc_state_dict and we want a clean discriminator for the new dataset.
+
     # 1. Initialize Models
     
     # A. Generator (Super Resolution)
     generator = Generator().to(device)
     
-    # Load pretrained weights if provided
-    if pretrained_generator_path and os.path.exists(pretrained_generator_path):
+    # Load pretrained weights — finetune checkpoint takes priority over pretrained_generator_path
+    if _finetune_gen_sd is not None:
+        missing, unexpected = generator.load_state_dict(_finetune_gen_sd, strict=True)
+        if missing or unexpected:
+            raise RuntimeError(
+                f"[Finetune] Generator state dict mismatch. Missing={missing}, Unexpected={unexpected}"
+            )
+        print("[Joint] Generator loaded from finetune checkpoint.")
+    elif pretrained_generator_path and os.path.exists(pretrained_generator_path):
         print(f"[Joint] Loading pretrained generator from: {pretrained_generator_path}")
         generator.load_state_dict(torch.load(pretrained_generator_path, map_location=device))
         print("[Joint] Pretrained weights loaded successfully!")
@@ -242,7 +280,6 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             model_config.num_classes, 
             device
         )
-
     # IMPLEMENTATION: Apply Spectral Normalization to SAD weights
     # This bounds the Lipschitz constant to stabilize training
     discriminator.apply(apply_spectral_norm)
@@ -256,6 +293,15 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
                         output_stride=16,
                         sync_bn=False,
                         freeze_bn=True).to(device)
+
+    # Load segmentor weights from finetune checkpoint if available
+    if _finetune_seg_sd is not None:
+        missing, unexpected = segmentor.load_state_dict(_finetune_seg_sd, strict=True)
+        if missing or unexpected:
+            raise RuntimeError(
+                f"[Finetune] Segmentor state dict mismatch. Missing={missing}, Unexpected={unexpected}"
+            )
+        print("[Joint] Segmentor loaded from finetune checkpoint.")
 
     # Optionally compile generator and segmentor for kernel fusion speedup.
     # Discriminator is excluded due to spectral norm hooks causing graph breaks.
@@ -403,8 +449,10 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             opt_g.zero_grad()
             opt_seg.zero_grad()
             
-            # NOTE: Re-use fake_sr/seg_logits from Step 1 WITHOUT detach for gradient flow
-            z_fake_grad = torch.cat([fake_sr, seg_probs], dim=1)
+            # NOTE: Re-use fake_sr/seg_logits from Step 1 WITHOUT detach for gradient flow.
+            # seg_probs is detached here: adversarial gradient should only reach the generator,
+            # not the segmentor.  The segmentor trains exclusively via CE loss (alpha term).
+            z_fake_grad = torch.cat([fake_sr, seg_probs.detach()], dim=1)
             
             # A. Calculate Generator Losses
             

@@ -53,8 +53,8 @@ def save_outputs(sr_tensor, seg_pred, filename, output_folder):
     """Save super-resolved image and segmentation mask (same as inference.py)."""
     os.makedirs(output_folder, exist_ok=True)
     
-    # Save SR image (same postprocess as inference.py)
-    sr_img = sr_tensor.squeeze(0).cpu().detach()
+    # Save SR image: denormalize from [-1,1] → [0,1] (inverse of mean=0.5, std=0.5 Normalize)
+    sr_img = (sr_tensor.squeeze(0).cpu().detach() * 0.5 + 0.5).clamp(0, 1)
     sr_pil = transforms.ToPILImage()(sr_img)
     sr_pil.save(os.path.join(output_folder, filename))
     
@@ -110,7 +110,10 @@ def evaluate(test_folder, output_folder, checkpoint_path, gt_folder):
         save_outputs(sr_img, seg_pred, filename, output_folder)
         
         # SR quality metrics (PSNR, SSIM, LPIPS, FID)
-        sr_accumulator.update(sr_img.cpu(), hr_img)
+        # Accumulator expects [0,1] tensors; denormalize from [-1,1] (mean=0.5, std=0.5)
+        sr_denorm = (sr_img.cpu() * 0.5 + 0.5).clamp(0, 1)
+        hr_denorm = (hr_img.float() * 0.5 + 0.5).clamp(0, 1)
+        sr_accumulator.update(sr_denorm, hr_denorm)
         
         # Convert to numpy for segmentation metrics
         gt_np = gt_mask.squeeze().cpu().numpy()

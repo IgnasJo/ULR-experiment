@@ -48,6 +48,8 @@ class LR_Scheduler(object):
             lr = self.lr * pow((1 - 1.0 * T / self.N), 0.9)
         elif self.mode == 'step':
             lr = self.lr * (0.1 ** (epoch // self.lr_step))
+        elif self.mode == 'constant':
+            lr = self.lr
         else:
             raise NotImplemented
         # warm up lr schedule
