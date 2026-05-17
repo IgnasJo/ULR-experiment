@@ -24,6 +24,15 @@ import os
 import torch
 from types import SimpleNamespace
 
+# Absolute path to the experiment directory (where this file lives).
+# Used to anchor all default paths so they resolve correctly regardless of CWD.
+_EXPERIMENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _rel(*parts: str) -> str:
+    """Resolve a path relative to the experiment directory."""
+    return os.path.join(_EXPERIMENT_DIR, *parts)
+
 
 def _env(key: str, default, type_fn=str):
     """Get environment variable with type conversion."""
@@ -51,7 +60,7 @@ model_config = SimpleNamespace(
 # Checkpoint Settings
 # ============================================================================
 checkpoint_config = SimpleNamespace(
-    base_dir = _env('ULR_CHECKPOINT_DIR', 'checkpoints'),
+    base_dir = _env('ULR_CHECKPOINT_DIR', _rel('checkpoints')),
     joint_filename = "joint_checkpoint_final.pth",
     pretrained_gen_filename = "pretrained_generator.pth",
     pretrained_disc_filename = "pretrained_discriminator.pth",
@@ -96,8 +105,8 @@ training_config = SimpleNamespace(
     d_update_freq = _env('ULR_D_UPDATE_FREQ', 1, int),
     
     # Data paths (override per experiment)
-    image_dir = _env('ULR_TRAIN_RGB', r'datasets\custom_demo\rgb'),
-    mask_dir = _env('ULR_TRAIN_LABEL', r'datasets\custom_demo\label'),
+    image_dir = _env('ULR_TRAIN_RGB', _rel('datasets', 'custom_demo', 'rgb')),
+    mask_dir = _env('ULR_TRAIN_LABEL', _rel('datasets', 'custom_demo', 'label')),
 )
 
 
@@ -128,7 +137,7 @@ pretraining_config = SimpleNamespace(
     discriminator_lr = _env('ULR_PRETRAIN_DISCRIMINATOR_LR', 1e-5, float),
     
     # Data path
-    hr_image_dir = _env('ULR_TRAIN_RGB', r'datasets\custom_demo\rgb'),
+    hr_image_dir = _env('ULR_TRAIN_RGB', _rel('datasets', 'custom_demo', 'rgb')),
 )
 
 
@@ -136,9 +145,9 @@ pretraining_config = SimpleNamespace(
 # Evaluation Configuration
 # ============================================================================
 evaluation_config = SimpleNamespace(
-    test_dir = _env('ULR_TEST_RGB', r'datasets\custom_demo\rgb'),
-    test_dir_gt = _env('ULR_TEST_LABEL', r'datasets\custom_demo\label'),
-    output_dir = _env('ULR_EVAL_OUTPUT_DIR', 'evaluation_output'),
+    test_dir = _env('ULR_TEST_RGB', _rel('datasets', 'custom_demo', 'rgb')),
+    test_dir_gt = _env('ULR_TEST_LABEL', _rel('datasets', 'custom_demo', 'label')),
+    output_dir = _env('ULR_EVAL_OUTPUT_DIR', _rel('evaluation_output')),
 )
 
 

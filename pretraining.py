@@ -18,7 +18,7 @@ def apply_spectral_norm(module):
 
 
 
-def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained_discriminator.pth"):
+def pretrain_sr(save_path=None, save_disc_path=None):
     """
     Pretrain the SR Generator.
     
@@ -29,6 +29,10 @@ def pretrain_sr(save_path="pretrained_generator.pth", save_disc_path="pretrained
     Returns:
         Tuple of (generator_path, discriminator_path)
     """
+    if save_path is None:
+        save_path = get_checkpoint_path("pretrained_generator.pth")
+    if save_disc_path is None:
+        save_disc_path = get_checkpoint_path("pretrained_discriminator.pth")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = training_config.use_amp and device.type == 'cuda'
     amp_dtype = torch.bfloat16 if use_amp else torch.float32

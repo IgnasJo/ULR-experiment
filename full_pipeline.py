@@ -82,7 +82,7 @@ def run_batch_inference(checkpoint_path=None, test_dir=None, output_dir=None):
     ckpt = checkpoint_path or get_checkpoint_path(checkpoint_config.joint_filename)
     # Use batch_inference_config.rgb_dir if set, otherwise fall back to test_dir
     test = test_dir or batch_inference_config.rgb_dir or evaluation_config.test_dir
-    out_dir = output_dir or "batch_inference_output"
+    out_dir = output_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), "batch_inference_output")
     
     print(f"Checkpoint: {ckpt}")
     print(f"Test dir:   {test}")
@@ -156,8 +156,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full Training Pipeline")
     parser.add_argument("--skip-pretrain", action="store_true", help="Skip pretraining, load existing weights")
     parser.add_argument("--pretrain-only", action="store_true", help="Only run pretraining")
-    parser.add_argument("--pretrained-gen", type=str, default="pretrained_generator.pth", help="Path for pretrained generator weights")
-    parser.add_argument("--pretrained-disc", type=str, default="pretrained_discriminator.pth", help="Path for pretrained discriminator weights")
+    parser.add_argument("--pretrained-gen", type=str, default=get_checkpoint_path("pretrained_generator.pth"), help="Path for pretrained generator weights")
+    parser.add_argument("--pretrained-disc", type=str, default=get_checkpoint_path("pretrained_discriminator.pth"), help="Path for pretrained discriminator weights")
     parser.add_argument("--finetune", type=str, default=None, help="Fine-tune from a full joint checkpoint (gen+seg loaded in-memory)")
     parser.add_argument("--joint-only", type=str, default=None, help="Run only joint training with specified generator weights")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation after training")
