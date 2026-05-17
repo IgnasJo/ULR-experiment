@@ -190,7 +190,7 @@ def evaluate(test_folder, output_folder, checkpoint_path, gt_folder):
         f.write(f"Mean Hausdorff Distance: {all_metrics['Mean_Hausdorff_Distance']:.4f}\n")
         f.write(f"Average Surface Distance: {all_metrics['Average_Surface_Distance']:.4f}\n")
 
-    # Save JSON for programmatic consumption (e.g. overfit_test_pipeline.py)
+    # Save JSON for programmatic consumption (e.g. full_pipeline.py --overfit)
     with open(os.path.join(output_folder, "metrics.json"), "w") as f:
         json.dump(all_metrics, f, indent=2)
 

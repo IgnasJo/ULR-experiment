@@ -13,6 +13,8 @@ Usage:
     python full_pipeline.py --eval-only --checkpoint path.pth  # Evaluate specific checkpoint
     python full_pipeline.py --batch-inference       # Run batch inference on separate test folder
     python full_pipeline.py --batch-inference --checkpoint path.pth  # Batch inference with specific checkpoint
+    python full_pipeline.py --overfit               # Overfit validation on ULR_overfit_data (pretrain→joint→eval)
+    python full_pipeline.py --overfit --train-epochs 100 --target-miou 0.70  # Overfit with custom settings
 """
 
 import argparse
@@ -152,6 +154,105 @@ def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_gen_p
     print("="*60)
 
 
+def run_overfit(args) -> int:
+    """
+    Run overfit validation inline using ULR_overfit_data.
+
+    Mutates config objects directly (same-process, no subprocess). Returns an
+    exit code: 0 = PASS, 1 = metrics.json missing, 2 = target mIoU not reached.
+    """
+    import json
+    import shutil
+    from datetime import datetime
+    import torch
+    import numpy as np
+    import config as _cfg
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    overfit_data = os.path.join(script_dir, "ULR_overfit_data")
+    test_images = os.path.join(overfit_data, "test_images")
+    test_labels = os.path.join(overfit_data, "test_labels")
+
+    for path, label in [(test_images, "Test images"), (test_labels, "Test labels")]:
+        if not os.path.isdir(path):
+            raise FileNotFoundError(f"[Overfit] {label} directory not found: {path}")
+
+    run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ckpt_dir = args.checkpoint_dir or os.path.join(script_dir, "checkpoints", f"overfit_{run_stamp}")
+    eval_dir = args.eval_output or os.path.join(script_dir, "evaluation_output", f"overfit_{run_stamp}")
+
+    if args.clean:
+        shutil.rmtree(ckpt_dir, ignore_errors=True)
+        shutil.rmtree(eval_dir, ignore_errors=True)
+
+    os.makedirs(ckpt_dir, exist_ok=True)
+    os.makedirs(eval_dir, exist_ok=True)
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    # Mutate config objects directly — SimpleNamespace is mutable and the same
+    # objects are shared across all downstream imports (training.py, evaluation.py…).
+    _cfg.checkpoint_config.base_dir = ckpt_dir
+    _cfg.training_config.num_epochs = args.train_epochs
+    _cfg.training_config.batch_size = args.batch_size
+    _cfg.training_config.image_dir = test_images
+    _cfg.training_config.mask_dir = test_labels
+    _cfg.training_config.alpha = args.alpha
+    _cfg.training_config.lambda_2 = args.lambda_fea
+    _cfg.training_config.lambda_3 = args.lambda_adv
+    _cfg.training_config.use_abl_loss = False  # disabled for overfit speed
+    _cfg.pretraining_config.num_epochs = args.pretrain_epochs
+    _cfg.pretraining_config.batch_size = args.batch_size
+    _cfg.pretraining_config.hr_image_dir = test_images
+    _cfg.evaluation_config.test_dir = test_images
+    _cfg.evaluation_config.test_dir_gt = test_labels
+    _cfg.evaluation_config.output_dir = eval_dir
+
+    print("=" * 72)
+    print("Overfit Validation")
+    print("=" * 72)
+    print(f"Data dir       : {overfit_data}")
+    print(f"Pretrain epochs: {args.pretrain_epochs}")
+    print(f"Train epochs   : {args.train_epochs}")
+    print(f"Batch size     : {args.batch_size}")
+    print(f"Checkpoint dir : {ckpt_dir}")
+    print(f"Eval output    : {eval_dir}")
+    print(f"Alpha          : {args.alpha}")
+    print(f"Lambda fea     : {args.lambda_fea}")
+    print(f"Lambda adv     : {args.lambda_adv}")
+    print(f"Target mIoU    : {args.target_miou}")
+
+    pretrained_gen = get_checkpoint_path("pretrained_generator.pth")
+    pretrained_disc = get_checkpoint_path("pretrained_discriminator.pth")
+    run_full_pipeline(run_eval=True, pretrained_gen_path=pretrained_gen, pretrained_disc_path=pretrained_disc)
+
+    metrics_path = os.path.join(eval_dir, "metrics.json")
+    if not os.path.exists(metrics_path):
+        print("[Overfit] WARNING: Pipeline finished but metrics.json was not found.")
+        print(f"[Overfit] Expected: {metrics_path}")
+        return 1
+
+    with open(metrics_path, "r") as f:
+        metrics = json.load(f)
+
+    miou = float(metrics.get("mIoU", 0.0))
+    print("\n" + "=" * 72)
+    print("Overfit Validation Summary")
+    print("=" * 72)
+    print(f"mIoU         : {miou:.4f}")
+    print(f"Target mIoU  : {args.target_miou:.4f}")
+    print(f"Metrics file : {metrics_path}")
+
+    if miou >= args.target_miou:
+        print("[Overfit] PASS: Overfit target reached.")
+        return 0
+
+    print("[Overfit] WARNING: Pipeline completed but overfit target not reached.")
+    print("[Overfit] Try increasing --train-epochs or lowering --target-miou.")
+    return 2
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full Training Pipeline")
     parser.add_argument("--skip-pretrain", action="store_true", help="Skip pretraining, load existing weights")
@@ -166,10 +267,25 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path for evaluation/inference")
     parser.add_argument("--eval-output", type=str, default=None, help="Output directory for evaluation results")
     parser.add_argument("--test-dir", type=str, default=None, help="Test images directory for batch inference")
-    
+    # Overfit validation mode
+    parser.add_argument("--overfit", action="store_true", help="Run overfit validation on ULR_overfit_data (pretrain→joint→eval)")
+    parser.add_argument("--pretrain-epochs", type=int, default=5, help="[--overfit] SR pretraining epochs (default: 5)")
+    parser.add_argument("--train-epochs", type=int, default=60, help="[--overfit] Joint training epochs (default: 60)")
+    parser.add_argument("--batch-size", type=int, default=1, help="[--overfit] Training batch size (default: 1)")
+    parser.add_argument("--seed", type=int, default=42, help="[--overfit] Deterministic seed (default: 42)")
+    parser.add_argument("--target-miou", type=float, default=0.35, help="[--overfit] mIoU pass/fail threshold (default: 0.35)")
+    parser.add_argument("--alpha", type=float, default=0.9, help="[--overfit] Segmentation loss weight (default: 0.9)")
+    parser.add_argument("--lambda-adv", type=float, default=0.001, help="[--overfit] Adversarial loss weight (default: 0.001)")
+    parser.add_argument("--lambda-fea", type=float, default=0.005, help="[--overfit] Feature loss weight (default: 0.005)")
+    parser.add_argument("--checkpoint-dir", type=str, default=None, help="[--overfit] Checkpoint directory (default: checkpoints/overfit_<timestamp>)")
+    parser.add_argument("--clean", action="store_true", help="[--overfit] Delete checkpoint/eval dirs before running")
+    parser.add_argument("--allow-gpu", action="store_true", help="[--overfit] GPU is used if available (default); set CUDA_VISIBLE_DEVICES= to force CPU")
+
     args = parser.parse_args()
-    
-    if args.finetune:
+
+    if args.overfit:
+        sys.exit(run_overfit(args))
+    elif args.finetune:
         train_joint(pretrained_checkpoint_path=args.finetune)
     elif args.batch_inference:
         run_batch_inference(

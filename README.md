@@ -40,7 +40,7 @@ python full_pipeline.py --joint-only weights.pth
 Run a minimal full pipeline (pretrain + joint train + eval) on `ULR_overfit_data`:
 
 ```bash
-python overfit_test_pipeline.py --pretrain-epochs 1 --train-epochs 1 --target-miou 0.0 --allow-gpu
+python full_pipeline.py --overfit --pretrain-epochs 1 --train-epochs 1 --target-miou 0.0 --allow-gpu
 ```
 
 For an overfit-oriented sanity pass, increase epochs (for example `--train-epochs 20`).
