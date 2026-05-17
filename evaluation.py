@@ -68,10 +68,15 @@ def evaluate(test_folder, output_folder, checkpoint_path, gt_folder):
     Evaluate model using DataLoader approach (consistent with training/pretraining).
     Computes all metrics from the ULR2SS paper Table 4.
     """
-    # 1. Setup
-    os.makedirs(output_folder, exist_ok=True)
+    # 1. Setup - Set deterministic mode for reproducible evaluation
+    torch.manual_seed(42)
+    np.random.seed(42)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
     # 2. Initialize State (always fresh)
+    os.makedirs(output_folder, exist_ok=True)
     evaluator = Evaluator(num_class=model_config.num_classes)
     sr_accumulator = SRMetricsAccumulator(device=str(device), compute_lpips=True)
     print("Starting fresh evaluation...")
@@ -129,7 +134,7 @@ def evaluate(test_folder, output_folder, checkpoint_path, gt_folder):
 
     # 6. Final Metrics
     print("\n" + "=" * 50)
-    print("FINAL METRICS (ULR2SS Paper Table 4)")
+    print("FINAL METRICS")
     print("=" * 50)
     
     # Get all segmentation metrics at once

@@ -164,7 +164,7 @@ class SRMetricsAccumulator:
                 self._lpips_fn = lpips.LPIPS(net='alex').to(device)
                 self._lpips_fn.eval()
             except ImportError:
-                warnings.warn("lpips package not found — LPIPS will not be computed.")
+                pass  # LPIPS optional; skip silently if not available
 
     def update(self, sr: torch.Tensor, hr: torch.Tensor) -> None:
         """

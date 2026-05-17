@@ -111,6 +111,8 @@ def run_full_pipeline(skip_pretrain=False, pretrain_only=False, pretrained_gen_p
     print("\n" + "="*60)
     print("FULL TRAINING PIPELINE")
     print("="*60)
+    print("[Pipeline] Optimizations enabled: AMP, torch.compile, ABL loss")
+    print("="*60)
     
     # Phase 1: Pretraining
     if not skip_pretrain:
@@ -201,7 +203,6 @@ def run_overfit(args) -> int:
     _cfg.training_config.alpha = args.alpha
     _cfg.training_config.lambda_2 = args.lambda_fea
     _cfg.training_config.lambda_3 = args.lambda_adv
-    _cfg.training_config.use_abl_loss = False  # disabled for overfit speed
     _cfg.pretraining_config.num_epochs = args.pretrain_epochs
     _cfg.pretraining_config.batch_size = args.batch_size
     _cfg.pretraining_config.hr_image_dir = test_images
@@ -282,10 +283,18 @@ if __name__ == "__main__":
     parser.add_argument("--allow-gpu", action="store_true", help="[--overfit] GPU is used if available (default); set CUDA_VISIBLE_DEVICES= to force CPU")
 
     args = parser.parse_args()
+    
+    # Enable all optimizations globally for all pipeline modes
+    import config as _cfg
+    _cfg.training_config.use_amp = True
+    _cfg.training_config.use_compile = True
+    _cfg.training_config.use_abl_loss = True
 
     if args.overfit:
         sys.exit(run_overfit(args))
     elif args.finetune:
+        # Set num_epochs from CLI before finetuning
+        _cfg.training_config.num_epochs = args.train_epochs
         train_joint(pretrained_checkpoint_path=args.finetune)
     elif args.batch_inference:
         run_batch_inference(
@@ -297,6 +306,8 @@ if __name__ == "__main__":
         run_evaluation(checkpoint_path=args.checkpoint, output_dir=args.eval_output)
     elif args.joint_only:
         # When running joint-only, also check for discriminator weights
+        # Also respect --train-epochs if specified
+        _cfg.training_config.num_epochs = args.train_epochs
         disc_path = args.pretrained_disc if os.path.exists(args.pretrained_disc) else None
         train_joint(pretrained_generator_path=args.joint_only, pretrained_discriminator_path=disc_path)
     else:

@@ -142,6 +142,27 @@ pretraining_config = SimpleNamespace(
 
 
 # ============================================================================
+# Validation Configuration (per-epoch, boundary-aware, augmentation-free)
+# ============================================================================
+validation_config = SimpleNamespace(
+    # Paths to a dedicated validation split. When unset (None) validation falls
+    # back to the training paths — metrics then reflect training-set performance.
+    val_image_dir   = _env('ULR_VAL_RGB',   None),
+    val_mask_dir    = _env('ULR_VAL_LABEL', None),
+
+    # Number of samples to validate on (first N in sorted order).
+    # Set 0 to validate on the full validation set.
+    val_subset_size = _env('ULR_VAL_SUBSET_SIZE', 50, int),
+
+    # Run validation every N epochs (1 = every epoch).
+    val_freq        = _env('ULR_VAL_FREQ', 1, int),
+
+    # Pixel tolerance τ used for BF₁ and Symmetric Boundary Dice.
+    val_tau         = _env('ULR_VAL_TAU', 2, int),
+)
+
+
+# ============================================================================
 # Evaluation Configuration
 # ============================================================================
 evaluation_config = SimpleNamespace(

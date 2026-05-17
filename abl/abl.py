@@ -169,7 +169,7 @@ class ABL(nn.Module):
         # print(weight_ce)
 
         # delete if min is 8 (local position)
-        direction_gt_idx = [direction_gt!=8]
+        direction_gt_idx = (direction_gt!=8,)
         direction_gt = direction_gt[direction_gt_idx]
 
 

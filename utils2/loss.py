@@ -5,7 +5,8 @@ class SegmentationLosses(object):
     def __init__(self, weight=None, size_average=True, batch_average=True, ignore_index=255, cuda=False):
         self.ignore_index = ignore_index
         self.weight = weight
-        self.size_average = size_average
+        # Convert deprecated size_average to reduction parameter
+        self.reduction = 'mean' if size_average else 'none'
         self.batch_average = batch_average
         self.cuda = cuda
 
@@ -21,21 +22,20 @@ class SegmentationLosses(object):
     def CrossEntropyLoss(self, logit, target):
         n, c, h, w = logit.size()
         criterion = nn.CrossEntropyLoss(weight=self.weight, ignore_index=self.ignore_index,
-                                        size_average=self.size_average)
+                                        reduction=self.reduction)
         if self.cuda:
             criterion = criterion.to(logit.device)
 
         loss = criterion(logit, target.long())
 
-        if self.batch_average:
-            loss /= n
-
+        # Note: With reduction='mean', CE already averages over all valid pixels.
+        # No further division by batch size is needed.
         return loss
 
     def FocalLoss(self, logit, target, gamma=2, alpha=0.5):
         n, c, h, w = logit.size()
         criterion = nn.CrossEntropyLoss(weight=self.weight, ignore_index=self.ignore_index,
-                                        size_average=self.size_average)
+                                        reduction=self.reduction)
         if self.cuda:
             criterion = criterion.to(logit.device)
 
@@ -44,9 +44,6 @@ class SegmentationLosses(object):
         if alpha is not None:
             logpt *= alpha
         loss = -((1 - pt) ** gamma) * logpt
-
-        if self.batch_average:
-            loss /= n
 
         return loss
 

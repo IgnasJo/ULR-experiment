@@ -23,17 +23,19 @@ class Evaluator(object):
         return Acc
 
     def Mean_Intersection_over_Union(self):
-        MIoU = np.diag(self.confusion_matrix) / (
-                    np.sum(self.confusion_matrix, axis=1) + np.sum(self.confusion_matrix, axis=0) -
-                    np.diag(self.confusion_matrix))
+        denominator = (np.sum(self.confusion_matrix, axis=1) + np.sum(self.confusion_matrix, axis=0) -
+                       np.diag(self.confusion_matrix))
+        MIoU = np.divide(np.diag(self.confusion_matrix), denominator, 
+                         where=denominator!=0, out=np.zeros_like(denominator, dtype=float))
         MIoU = np.nanmean(MIoU)
         return MIoU
 
     def Frequency_Weighted_Intersection_over_Union(self):
         freq = np.sum(self.confusion_matrix, axis=1) / np.sum(self.confusion_matrix)
-        iu = np.diag(self.confusion_matrix) / (
-                    np.sum(self.confusion_matrix, axis=1) + np.sum(self.confusion_matrix, axis=0) -
-                    np.diag(self.confusion_matrix))
+        denominator = (np.sum(self.confusion_matrix, axis=1) + np.sum(self.confusion_matrix, axis=0) -
+                       np.diag(self.confusion_matrix))
+        iu = np.divide(np.diag(self.confusion_matrix), denominator,
+                       where=denominator!=0, out=np.zeros_like(denominator, dtype=float))
 
         FWIoU = (freq[freq > 0] * iu[freq > 0]).sum()
         return FWIoU

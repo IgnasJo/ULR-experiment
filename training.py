@@ -16,6 +16,8 @@ from esrgan import Generator, Discriminator, disc_config
 from training.dataloder import create_train_loader
 from config import training_config, format_config, model_config
 from paths import get_checkpoint_path, get_checkpoint_name
+from validation import create_val_loader, run_epoch_validation
+
 def strip_module_state_dict(sd):
     """Strip 'module.' (DataParallel) and '_orig_mod.' (torch.compile) prefixes from state dict keys."""
     return {k.replace('_orig_mod.', '').replace('module.', ''): v for k, v in sd.items()}
@@ -357,6 +359,10 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     # 6. Training Loop
     best_pred = 0.0
 
+    # Validation: build loader once and reuse across epochs for efficiency
+    val_loader = create_val_loader()
+    best_bf1 = 0.0
+
     def freeze_bn_layers(model):
         for m in model.modules():
             if isinstance(m, torch.nn.BatchNorm2d):
@@ -524,6 +530,11 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             ckpt_path = get_checkpoint_path(ckpt_name)
             torch.save(checkpoint, ckpt_path)
             print(f"[Joint] Checkpoint saved to: {ckpt_path}")
+
+        # Per-epoch validation: boundary-aware metrics; saves best checkpoint by BF₁
+        _, best_bf1 = run_epoch_validation(
+            generator, segmentor, epoch + 1, best_bf1, device, val_loader=val_loader
+        )
     
     # Save final checkpoint
     final_checkpoint = {
@@ -533,8 +544,6 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
     }
     final_name = get_checkpoint_name('joint', is_final=True)
     final_path = get_checkpoint_path(final_name)
-    if os.path.exists(final_path):
-        print(f"[WARNING] Overwriting existing checkpoint: {final_path}")
     torch.save(final_checkpoint, final_path)
     print(f"[Joint] Training complete. Final checkpoint saved to: {final_path}")
 
