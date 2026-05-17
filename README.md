@@ -33,17 +33,19 @@ python full_pipeline.py
 python full_pipeline.py --skip-pretrain
 python full_pipeline.py --pretrain-only
 python full_pipeline.py --joint-only weights.pth
+python full_pipeline.py --finetune checkpoint.pth
 ```
 
-## End-to-end overfit test
+## Output structure
 
-Run a minimal full pipeline (pretrain + joint train + eval) on `ULR_overfit_data`:
-
-```bash
-python full_pipeline.py --overfit --pretrain-epochs 1 --train-epochs 1 --target-miou 0.0 --allow-gpu
+All outputs are written under `outputs/`:
 ```
-
-For an overfit-oriented sanity pass, increase epochs (for example `--train-epochs 20`).
+outputs/
+├── checkpoints/         # Pretrain and joint training checkpoints
+├── evaluation/          # Evaluation results (metrics.json, masks, SR images)
+├── batch_inference/     # Batch inference output images
+└── run_log.txt          # Full console log (appended each run)
+```
 
 ## Demo Test
 ```bash

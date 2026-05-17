@@ -31,13 +31,32 @@ degradation_transform = transforms.Compose([
 ])
 
 # Define transformations
-# RGB Images: Crop -> Tensor -> Normalize to [-1, 1] (mean=0.5, std=0.5)
+# RGB Images: Crop -> [Augmentation] -> Tensor -> Normalize to [-1, 1] (mean=0.5, std=0.5)
 # Matches the inference postprocess which denormalises via tensor * 0.5 + 0.5
-train_transform = transforms.Compose([
+
+# Base train transform (no augmentation)
+train_transform_base = transforms.Compose([
     transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
 ])
+
+# Augmented train transform (horizontal flip + color jitter)
+train_transform_aug = transforms.Compose([
+    transforms.CenterCrop((format_config.high_resolution, format_config.high_resolution)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.ColorJitter(
+        brightness=0.3,   # ±30%
+        contrast=0.3,     # ±30%
+        saturation=0.2,   # ±20%
+        hue=0.02          # ±2%
+    ),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+])
+
+# Select transform based on config
+train_transform = train_transform_aug if training_config.use_augmentation else train_transform_base
 
 def to_long_tensor(x):
     """Helper function to convert input to a Long Tensor for masks."""

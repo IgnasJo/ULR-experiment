@@ -155,14 +155,25 @@ def load_pretrained_discriminator_weights(discriminator, pretrained_path, num_cl
     
     return discriminator
 
-def to_one_hot(tensor, num_classes):
+def to_one_hot(tensor, num_classes, ignore_label=255):
     """
-    Converts label tensor [B, H, W] to one-hot tensor [B, C, H, W]
+    Converts label tensor [B, H, W] to one-hot tensor [B, C, H, W].
+    Pixels with ignore_label are mapped to all-zero vectors.
     Used for concatenating mask with image for Discriminator input (Eq 10).
     """
-    tensor = tensor.unsqueeze(1) # [B, 1, H, W]
-    one_hot = torch.zeros(tensor.size(0), num_classes, tensor.size(2), tensor.size(3), device=tensor.device)
-    one_hot.scatter_(1, tensor, 1.0)
+    # Clamp ignore-label pixels to a valid class index to prevent scatter_ OOB
+    safe_tensor = tensor.clone()
+    ignore_mask = (tensor == ignore_label)
+    safe_tensor[ignore_mask] = 0
+
+    safe_tensor = safe_tensor.unsqueeze(1)  # [B, 1, H, W]
+    one_hot = torch.zeros(safe_tensor.size(0), num_classes, safe_tensor.size(2), safe_tensor.size(3), device=tensor.device)
+    one_hot.scatter_(1, safe_tensor, 1.0)
+
+    # Zero out the one-hot vectors for ignored pixels
+    if ignore_mask.any():
+        one_hot *= (~ignore_mask).unsqueeze(1).float()
+
     return one_hot
 
 def feature_loss_calc(f_real, f_fake):
@@ -399,15 +410,14 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             # ===================================================================================
             #  STEP 1: GENERATE & SEGMENT (Forward Pass)
             # ===================================================================================
-            # AMP autocast only on generator forward (biggest compute win from bfloat16).
-            # Everything else stays float32 to match baseline numerical behaviour.
+            # AMP autocast covers generator + segmentor (major compute savings).
+            # BF16 does not require GradScaler; losses stay numerically safe.
             with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
                 fake_sr = generator(lr_img)
-            # Immediately upcast to float32 so all downstream ops are full precision.
+                seg_logits = segmentor(fake_sr)
+            # Upcast outputs to float32 for loss computation and discriminator
             fake_sr = fake_sr.float()
-
-            # 2. Segment SR Image (S_pred)
-            seg_logits = segmentor(fake_sr)
+            seg_logits = seg_logits.float()
             seg_probs = torch.softmax(seg_logits, dim=1)
 
             # 3. Prepare Joint Inputs for Discriminator (Eq 10)
@@ -415,49 +425,60 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             z_real = torch.cat([real_img, masks_onehot], dim=1)
             z_fake = torch.cat([fake_sr.detach(), seg_probs.detach()], dim=1)
 
-            # Add instance noise (decays over training)
-            noise_std = max(0.1 * (1 - epoch / training_config.num_epochs), 0.02)
-            z_real_noisy = z_real + noise_std * torch.randn_like(z_real)
-            z_fake_noisy = z_fake + noise_std * torch.randn_like(z_fake)
+            # Instance noise (decays linearly to zero over training)
+            noise_std = 0.1 * (1 - epoch / training_config.num_epochs)
+            if noise_std > 0:
+                z_real = z_real + noise_std * torch.randn_like(z_real)
+                z_fake = z_fake + noise_std * torch.randn_like(z_fake)
 
             # ===================================================================================
             #  STEP 2: TRAIN DISCRIMINATOR (Eq 7)
             # ===================================================================================
-            opt_d.zero_grad()
-            
-            # Real Branch - One-sided label smoothing
-            pred_d_real = discriminator(z_real_noisy)
-            real_labels = torch.ones_like(pred_d_real) * training_config.label_smoothing_real
-            loss_d_real = criterion_gan(pred_d_real, real_labels)
-            
-            # Fake Branch
-            pred_d_fake = discriminator(z_fake_noisy)
-            loss_d_fake = criterion_gan(pred_d_fake, torch.zeros_like(pred_d_fake))
-            
-            loss_d = loss_d_real + loss_d_fake
-            
-            # Only update discriminator if it's not already too strong
-            should_update_d = loss_d.item() > 0.1
-            
-            if not (torch.isnan(loss_d) or torch.isinf(loss_d)) and should_update_d:
-                loss_d.backward()
-                torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
-                opt_d.step()
-            elif not should_update_d:
-                pass  # Skip D update silently when D is too strong
+            # d_update_freq > 1 slows the discriminator relative to the generator,
+            # which prevents D from memorising a small dataset and driving L_Adv up.
+            update_d = (i % training_config.d_update_freq == 0)
+            if update_d:
+                opt_d.zero_grad()
+                
+                # Real Branch - One-sided label smoothing
+                pred_d_real = discriminator(z_real)
+                real_labels = torch.ones_like(pred_d_real) * training_config.label_smoothing_real
+                loss_d_real = criterion_gan(pred_d_real, real_labels)
+                
+                # Fake Branch
+                pred_d_fake = discriminator(z_fake)
+                loss_d_fake = criterion_gan(pred_d_fake, torch.zeros_like(pred_d_fake))
+                
+                loss_d = loss_d_real + loss_d_fake
+                
+                if not (torch.isnan(loss_d) or torch.isinf(loss_d)):
+                    loss_d.backward()
+                    torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
+                    opt_d.step()
+                else:
+                    print(f"[Warning] NaN/Inf in discriminator loss, skipping D update")
+                    loss_d = torch.tensor(0.0, device=device)
             else:
-                print(f"[Warning] NaN/Inf in discriminator loss, skipping D update")
-                loss_d = torch.tensor(0.0, device=device)
+                # Compute loss for logging only (no backward)
+                with torch.no_grad():
+                    pred_d_real = discriminator(z_real)
+                    pred_d_fake = discriminator(z_fake)
+                    real_labels = torch.ones_like(pred_d_real) * training_config.label_smoothing_real
+                    loss_d = criterion_gan(pred_d_real, real_labels) + \
+                             criterion_gan(pred_d_fake, torch.zeros_like(pred_d_fake))
 
             # ===================================================================================
             #  STEP 3: TRAIN GENERATOR & SEGMENTOR JOINTLY (Eq 1)
             # ===================================================================================
             opt_g.zero_grad()
             opt_seg.zero_grad()
+
+            # Freeze discriminator to avoid computing/storing its parameter gradients
+            for p in discriminator.parameters():
+                p.requires_grad_(False)
             
-            # NOTE: Re-use fake_sr/seg_logits from Step 1 WITHOUT detach for gradient flow.
-            # seg_probs is detached here: adversarial gradient should only reach the generator,
-            # not the segmentor.  The segmentor trains exclusively via CE loss (alpha term).
+            # seg_probs is detached: adversarial gradient reaches only the generator,
+            # not the segmentor. The segmentor trains exclusively via CE/ABL loss.
             z_fake_grad = torch.cat([fake_sr, seg_probs.detach()], dim=1)
             
             # A. Calculate Generator Losses
@@ -470,8 +491,6 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             radio_size = (378, 378)
             real_for_radio = F.interpolate(real_img, size=radio_size, mode='bilinear', align_corners=False)
             fake_for_radio = F.interpolate(fake_sr, size=radio_size, mode='bilinear', align_corners=False)
-            # Real features: no gradients needed (target)
-            # Fake features: gradients needed (to train generator via L_fea)
             real_feat = feature_extractor(real_for_radio, no_grad=True)
             fake_feat = feature_extractor(fake_for_radio, no_grad=False)
             loss_fea = feature_loss_calc(real_feat.detach(), fake_feat)
@@ -479,6 +498,10 @@ def train_joint(pretrained_generator_path=None, pretrained_discriminator_path=No
             # 3. Adversarial Loss - Eq (11)
             pred_d_fake_g = discriminator(z_fake_grad)
             loss_adv = criterion_gan(pred_d_fake_g, torch.ones_like(pred_d_fake_g))
+
+            # Unfreeze discriminator for next iteration
+            for p in discriminator.parameters():
+                p.requires_grad_(True)
 
             # B. Calculate Segmentation Loss (L_ce) - Eq (3)
             loss_ce = criterion_ce(seg_logits, masks_gt)

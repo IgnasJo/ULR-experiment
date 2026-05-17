@@ -193,7 +193,7 @@ ABL(
     isdetach=True,           # Detach neighbor logits (stability)
     max_N_ratio=1/100,       # Max boundary pixel ratio
     ignore_label=255,        # Ignore label index
-    label_smoothing=0.0,     # Disabled for stability
+    label_smoothing=0.2,     # Conflict-suppression smoothing (paper recommendation)
     max_clip_dist=20.0       # Distance clipping threshold
 )
 ```
@@ -224,9 +224,9 @@ ABL(
 | Component | Optimizer | Learning Rate | Momentum/Betas | Weight Decay |
 |-----------|-----------|---------------|----------------|--------------|
 | Generator | Adam | 1×10⁻⁴ | β=(0.9, 0.999) | - |
-| Discriminator | Adam | 1×10⁻⁵ | β=(0.9, 0.999) | - |
-| Segmentor (backbone) | SGD | 1×10⁻² | momentum=0.9 | 5×10⁻⁴ |
-| Segmentor (head) | SGD | 1×10⁻¹ | momentum=0.9 | 5×10⁻⁴ |
+| Discriminator | Adam | 5×10⁻⁶ | β=(0.9, 0.999) | - |
+| Segmentor (backbone) | SGD (Nesterov) | 1×10⁻³ | momentum=0.9 | 5×10⁻⁴ |
+| Segmentor (head) | SGD (Nesterov) | 1×10⁻² | momentum=0.9 | 5×10⁻⁴ |
 
 ### 5.3 Learning Rate Schedule
 
@@ -240,8 +240,8 @@ ABL(
 |-----------|----------------|---------|
 | Spectral Normalization | Applied to all D weights | Lipschitz constraint |
 | Label Smoothing | Real labels = 0.9 | Prevent D overconfidence |
-| Instance Noise | Gaussian, σ decays 0.1→0.02 | Prevent mode collapse |
-| D Update Skip | Skip when L_D < 0.1 | Prevent D dominance |
+| Instance Noise | Gaussian, σ decays 0.1→0.0 over training | Prevent mode collapse |
+| D Update Frequency | Update D every `d_update_freq` steps (default: 2) | Prevent D dominance on small datasets |
 | Gradient Clipping | max_norm = 1.0 | Prevent gradient explosion |
 
 ---
@@ -380,6 +380,9 @@ When ABL is enabled, distance maps are precomputed during data loading:
 | `pretraining.py` | Phase 1: SR pretraining |
 | `training.py` | Phase 2: Joint training with ABL |
 | `evaluation.py` | Phase 3: Metric computation |
+| `validation.py` | Per-epoch boundary-aware validation (saves best checkpoint by BF₁) |
+| `batch_inference.py` | Standalone batch inference (images only, no metrics) |
+| `paths.py` | Checkpoint path helpers (dated folder resolution) |
 | `esrgan.py` | Generator and Discriminator architectures |
 | `modeling/deeplab.py` | DeepLabV3+ segmentation model |
 | `abl/abl.py` | Active Boundary Loss implementation |

@@ -60,7 +60,7 @@ model_config = SimpleNamespace(
 # Checkpoint Settings
 # ============================================================================
 checkpoint_config = SimpleNamespace(
-    base_dir = _env('ULR_CHECKPOINT_DIR', _rel('checkpoints')),
+    base_dir = _env('ULR_CHECKPOINT_DIR', _rel('outputs', 'checkpoints')),
     joint_filename = "joint_checkpoint_final.pth",
     pretrained_gen_filename = "pretrained_generator.pth",
     pretrained_disc_filename = "pretrained_discriminator.pth",
@@ -79,9 +79,11 @@ training_config = SimpleNamespace(
     batch_size = _env('ULR_BATCH_SIZE', 1, int),
     
     # Learning rates
+    # segmentor_lr 1e-3 (10x group → 1e-2): conservative enough for small datasets.
+    # Raise to 1e-2 only for full-dataset training.
     generator_lr = _env('ULR_GENERATOR_LR', 1e-4, float),
-    discriminator_lr = _env('ULR_DISCRIMINATOR_LR', 1e-5, float),
-    segmentor_lr = _env('ULR_SEGMENTOR_LR', 1e-2, float),
+    discriminator_lr = _env('ULR_DISCRIMINATOR_LR', 5e-6, float),
+    segmentor_lr = _env('ULR_SEGMENTOR_LR', 1e-3, float),
     lr_scheduler = _env('ULR_LR_SCHEDULER', 'poly'),
     
     # Loss weights (Eq 1: L_tot = (1-α)(λ1*L2 + λ2*L_fea + λ3*L_adv) + α*L_ce + λ_abl*L_abl)
@@ -102,7 +104,13 @@ training_config = SimpleNamespace(
     
     # GAN Stability
     label_smoothing_real = _env('ULR_LABEL_SMOOTHING', 0.9, float),
-    d_update_freq = _env('ULR_D_UPDATE_FREQ', 1, int),
+    # d_update_freq=2: D trains every 2 G steps, preventing memorisation on tiny datasets.
+    # Set to 1 to restore equal update frequency.
+    d_update_freq = _env('ULR_D_UPDATE_FREQ', 2, int),
+    
+    # Data augmentation
+    # use_augmentation: enables random horizontal flip + color jitter (B/C/S/H)
+    use_augmentation = _env('ULR_USE_AUGMENTATION', False, bool),
     
     # Data paths (override per experiment)
     image_dir = _env('ULR_TRAIN_RGB', _rel('datasets', 'custom_demo', 'rgb')),
@@ -168,7 +176,7 @@ validation_config = SimpleNamespace(
 evaluation_config = SimpleNamespace(
     test_dir = _env('ULR_TEST_RGB', _rel('datasets', 'custom_demo', 'rgb')),
     test_dir_gt = _env('ULR_TEST_LABEL', _rel('datasets', 'custom_demo', 'label')),
-    output_dir = _env('ULR_EVAL_OUTPUT_DIR', _rel('evaluation_output')),
+    output_dir = _env('ULR_EVAL_OUTPUT_DIR', _rel('outputs', 'evaluation')),
 )
 
 

@@ -127,7 +127,8 @@ def pretrain_sr(save_path=None, save_disc_path=None):
 
             # 2. VGG perceptual loss
             fake_features = feature_extractor(fake_sr)
-            real_features = feature_extractor(hr_img).detach()
+            with torch.no_grad():
+                real_features = feature_extractor(hr_img)
             loss_vgg = criterion_l1(fake_features, real_features)
 
             # 3. Adversarial loss
